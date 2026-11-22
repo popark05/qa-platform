@@ -34,3 +34,16 @@ test("AI authored tests enter review queue immediately", async () => {
   assert.equal(created.json().status, "pending_review");
   await app.close();
 });
+
+test("structured Playwright actions are accepted by the test case API", async () => {
+  const app = buildApp();
+  const created = await app.inject({ method: "POST", url: "/v1/test-cases", payload: {
+    title: "Login", source: "manual", steps: [{
+      instruction: "Fill email",
+      action: JSON.stringify({ type: "fill", locator: { by: "testId", value: "email" }, value: "qa@example.test" })
+    }]
+  }});
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.json().steps[0].action.includes("qa@example.test"), true);
+  await app.close();
+});

@@ -18,8 +18,13 @@ export interface TestRun {
   startedAt: string;
   finishedAt: string;
 }
+export interface StepExecutionContext {
+  runId: string;
+  target: TestRun["target"];
+}
 export interface StepExecutor {
-  execute(step: TestStep, index: number): Promise<StepExecutionResult>;
+  execute(step: TestStep, index: number, context?: StepExecutionContext): Promise<StepExecutionResult>;
+  closeRun?(runId: string): Promise<void>;
 }
 
 export class MockStepExecutor implements StepExecutor {
@@ -38,15 +43,20 @@ export class TestRunService {
 
   async execute(testCase: TestCase, target: TestRun["target"]): Promise<TestRun> {
     if (testCase.status !== "approved") throw new Error("test_case_not_approved");
+    const runId = randomUUID();
     const startedAt = new Date().toISOString();
     const stepResults: StepExecutionResult[] = [];
-    for (const [index, step] of testCase.steps.entries()) {
-      const result = await this.executor.execute(step, index);
-      stepResults.push(result);
-      if (result.status === "failed") break;
+    try {
+      for (const [index, step] of testCase.steps.entries()) {
+        const result = await this.executor.execute(step, index, { runId, target });
+        stepResults.push(result);
+        if (result.status === "failed") break;
+      }
+    } finally {
+      await this.executor.closeRun?.(runId);
     }
     return {
-      runId: randomUUID(),
+      runId,
       testCaseId: testCase.testCaseId,
       testCaseVersion: testCase.version,
       target,

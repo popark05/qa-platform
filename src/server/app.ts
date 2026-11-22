@@ -10,7 +10,7 @@ const createTestCaseSchema = {
     source: { type: "string", enum: ["manual", "ai"] },
     steps: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, required: ["instruction"], properties: {
       stepId: { type: "string" }, instruction: { type: "string", minLength: 1, maxLength: 2000 },
-      action: { type: "string", maxLength: 100 }, expectedResult: { type: "string", maxLength: 2000 }
+      action: { type: "string", maxLength: 8000 }, expectedResult: { type: "string", maxLength: 2000 }
     } } }
   }
 } as const;
@@ -23,8 +23,17 @@ const runSchema = {
   properties: { platform: { type: "string", enum: ["web", "android", "ios", "hybrid"] }, targetId: { type: "string", minLength: 1, maxLength: 200 } }
 } as const;
 
-export function buildApp(store = new TestCaseStore(), runs = new TestRunService()): FastifyInstance {
+export interface AppOptions {
+  store?: TestCaseStore;
+  runs?: TestRunService;
+  onClose?: () => Promise<void>;
+}
+
+export function buildApp(options: AppOptions = {}): FastifyInstance {
+  const store = options.store ?? new TestCaseStore();
+  const runs = options.runs ?? new TestRunService();
   const app = Fastify({ logger: true });
+  app.addHook("onClose", async () => { await options.onClose?.(); });
   app.get("/health", async () => ({ status: "ok", service: "qa-platform" }));
   app.get("/v1/test-cases", async () => ({ items: store.list() }));
 
