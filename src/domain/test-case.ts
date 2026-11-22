@@ -39,37 +39,31 @@ export class TestCaseStore {
   create(input: Pick<TestCase, "title" | "description" | "source" | "steps">): TestCase {
     const now = new Date().toISOString();
     const testCase: TestCase = {
-      testCaseId: randomUUID(),
-      version: 1,
-      ...input,
+      testCaseId: randomUUID(), version: 1, ...input,
       status: input.source === "ai" ? "pending_review" : "draft",
-      createdAt: now,
-      updatedAt: now
+      createdAt: now, updatedAt: now
     };
     this.cases.set(testCase.testCaseId, testCase);
     return testCase;
   }
 
-  get(testCaseId: string): TestCase | undefined {
-    return this.cases.get(testCaseId);
-  }
+  get(testCaseId: string): TestCase | undefined { return this.cases.get(testCaseId); }
+  list(): TestCase[] { return [...this.cases.values()]; }
 
-  list(): TestCase[] {
-    return [...this.cases.values()];
+  submitForReview(testCaseId: string): TestCase | undefined {
+    const current = this.cases.get(testCaseId);
+    if (!current || current.status !== "draft") return undefined;
+    const updated = { ...current, status: "pending_review" as const, updatedAt: new Date().toISOString() };
+    this.cases.set(testCaseId, updated);
+    return updated;
   }
 
   review(testCaseId: string, reviewerId: string, decision: "approved" | "rejected", comment?: string): ReviewRecord | undefined {
     const current = this.cases.get(testCaseId);
     if (!current || current.status !== "pending_review") return undefined;
-
     const review: ReviewRecord = {
-      reviewId: randomUUID(),
-      testCaseId,
-      version: current.version,
-      reviewerId,
-      decision,
-      ...(comment === undefined ? {} : { comment }),
-      reviewedAt: new Date().toISOString()
+      reviewId: randomUUID(), testCaseId, version: current.version, reviewerId, decision,
+      ...(comment === undefined ? {} : { comment }), reviewedAt: new Date().toISOString()
     };
     this.reviews.push(review);
     this.cases.set(testCaseId, { ...current, status: decision, updatedAt: review.reviewedAt });
