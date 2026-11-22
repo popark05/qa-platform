@@ -94,7 +94,7 @@ export class PlaywrightStepExecutor implements StepExecutor {
             }
             break;
           }
-          case "wait_for": await locator.waitFor({ state: action.state, timeout: 5_000 }); break;
+          case "wait_for": await locator.waitFor({ ...(action.state === undefined ? {} : { state: action.state }), timeout: 5_000 }); break;
         }
       }
       return { stepId: step.stepId, status: "passed", message: `Playwright action completed: ${action.type}`, durationMs: Date.now() - started };
