@@ -16,33 +16,20 @@ export interface ExecutionTarget {
 }
 
 export interface Locator {
-  strategy:
-    | "accessibility_id" | "role_name" | "text" | "test_id"
-    | "css" | "xpath" | "ios_predicate"
-    | "android_uiautomator" | "coordinate" | "custom";
+  strategy: "accessibility_id" | "role_name" | "text" | "test_id" | "css" | "xpath" | "ios_predicate" | "android_uiautomator" | "coordinate" | "custom";
   value: string;
   options?: Record<string, unknown>;
 }
 
 export interface ScreenSnapshot {
-  platform: Platform;
-  url?: string;
-  routeOrNativeIdentifier?: string;
-  title?: string;
-  elements: ElementSnapshot[];
-  observedAt: string;
-  rawEvidenceIds: string[];
+  platform: Platform; url?: string; routeOrNativeIdentifier?: string; title?: string;
+  elements: ElementSnapshot[]; observedAt: string; rawEvidenceIds: string[];
   metadata: Record<string, unknown>;
 }
 
 export interface ElementSnapshot {
-  semanticKey?: string;
-  name?: string;
-  role?: string;
-  text?: string;
-  visible: boolean;
-  enabled?: boolean;
-  locatorCandidates: Locator[];
+  semanticKey?: string; name?: string; role?: string; text?: string;
+  visible: boolean; enabled?: boolean; locatorCandidates: Locator[];
   attributes: Record<string, unknown>;
 }
 
@@ -59,44 +46,27 @@ export type Action =
   | { type: "custom"; name: string; parameters: Record<string, unknown> };
 
 export interface ActionResult {
-  status: "passed" | "failed" | "error";
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  before?: ScreenSnapshot;
-  after?: ScreenSnapshot;
+  status: "passed" | "failed" | "error"; startedAt: string; finishedAt: string;
+  durationMs: number; before?: ScreenSnapshot; after?: ScreenSnapshot;
   error?: { code: string; message: string; details?: unknown };
-  evidenceIds: string[];
-  metadata: Record<string, unknown>;
+  evidenceIds: string[]; metadata: Record<string, unknown>;
 }
 
 export interface Assertion {
-  type:
-    | "screen" | "element_visible" | "element_text"
-    | "element_attribute" | "url" | "value" | "not_present" | "custom";
-  target?: Locator;
-  expected: unknown;
-  operator?: string;
+  type: "screen" | "element_visible" | "element_text" | "element_attribute" | "url" | "value" | "not_present" | "custom";
+  target?: Locator; expected: unknown; operator?: string;
 }
 
 export interface AssertionResult {
-  status: "passed" | "failed" | "error";
-  expected: unknown;
-  actual?: unknown;
-  message?: string;
-  evidenceIds: string[];
+  status: "passed" | "failed" | "error"; expected: unknown; actual?: unknown;
+  message?: string; evidenceIds: string[];
 }
 
 export interface EvidenceArtifact {
   id: string;
-  type: "screenshot" | "video" | "dom_snapshot" | "accessibility_tree"
-      | "ui_hierarchy" | "console_log" | "device_log" | "network_trace"
-      | "trace" | "other";
-  storageUri?: string;
-  contentHash?: string;
-  mimeType?: string;
-  capturedAt: string;
-  metadata: Record<string, unknown>;
+  type: "screenshot" | "video" | "dom_snapshot" | "accessibility_tree" | "ui_hierarchy" | "console_log" | "device_log" | "network_trace" | "trace" | "other";
+  storageUri?: string; contentHash?: string; mimeType?: string;
+  capturedAt: string; metadata: Record<string, unknown>;
 }
 
 export interface AutomationAdapter {
@@ -110,6 +80,24 @@ export interface AutomationAdapter {
   disconnect(): Promise<void>;
 }
 ```
+
+## Initial Playwright StepExecutor
+
+The QA Platform includes an opt-in `PlaywrightStepExecutor`. It accepts a Playwright `Page` from the execution/session manager and maps a constrained JSON action grammar to Playwright locators and operations. It does not launch browsers or own browser lifecycle.
+
+Each `TestStep.action` is a JSON string. Supported forms:
+
+```json
+{ "type": "navigate", "url": "https://example.test/login" }
+{ "type": "click", "locator": { "by": "role", "value": "button", "name": "Sign in" } }
+{ "type": "fill", "locator": { "by": "testId", "value": "email" }, "value": "qa@example.test" }
+{ "type": "press", "locator": { "by": "css", "value": "input[name=email]" }, "key": "Enter" }
+{ "type": "assert_visible", "locator": { "by": "text", "value": "Dashboard" } }
+{ "type": "assert_text", "locator": { "by": "role", "value": "heading" }, "expected": "Welcome" }
+{ "type": "wait_for", "locator": { "by": "testId", "value": "loading" }, "state": "hidden" }
+```
+
+Locator strategies are `role`, `text`, `testId` and `css`. The executor intentionally rejects arbitrary JavaScript/evaluate actions. A step without an action fails explicitly when this executor is selected; human-readable `instruction` remains documentation, not an executable command.
 
 ## Contract rules
 1. `connect` must fail clearly when target capabilities are unsupported.
@@ -127,14 +115,9 @@ export interface AutomationAdapter {
 
 ```ts
 export interface AdapterCapabilities {
-  screenshots: boolean;
-  accessibilityTree: boolean;
-  domInspection: boolean;
-  networkCapture: boolean;
-  deepLinks: boolean;
-  permissions: boolean;
-  deviceLogs: boolean;
-  webViewInspection: boolean;
+  screenshots: boolean; accessibilityTree: boolean; domInspection: boolean;
+  networkCapture: boolean; deepLinks: boolean; permissions: boolean;
+  deviceLogs: boolean; webViewInspection: boolean;
 }
 ```
 
