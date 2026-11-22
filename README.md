@@ -12,25 +12,35 @@ QA Platform manages test intent and execution for web, mobile, and hybrid applic
 
 ## Supported execution direction
 - Web: Playwright.
-- Mobile and hybrid: Mobilewright, with MobileCLI as a device-control/inspection companion where appropriate.
-- Adapter-specific runtime objects remain behind adapter interfaces.
+- Native Android/iOS: Mobilewright.
+- Hybrid: native Mobilewright and web Playwright capabilities are separate; explicit context-aware orchestration is not implemented yet.
 
 ## Development
 
-- Node.js 22+
+- Node.js 22.12+
 - Install dependencies: `npm install`
 - Run checks: `npm run typecheck && npm test && npm run build`
 
-The default execution adapter is a mock implementation. To enable managed Playwright execution:
+The default execution adapter is a mock implementation.
+
+### Web execution
 
 ```bash
 npx playwright install chromium
 QA_EXECUTION_ADAPTER=playwright PLAYWRIGHT_BROWSER=chromium npm start
 ```
 
-Supported browser names are `chromium`, `firefox` and `webkit`. A fresh isolated BrowserContext is created per test run, while the browser process is reused. The context is closed after the run. The service closes browser processes on shutdown.
+### Native mobile execution
 
-Test steps executed by Playwright must contain a structured JSON `action`. Supported actions and locator grammar are documented in [the adapter contract](docs/architecture/adapter-contract.md). Free-form instructions are not interpreted as executable code.
+Install Android SDK/JDK and boot an emulator or connect a device, or use macOS with Xcode for iOS. Run `npx mobilewright doctor` to verify the toolchain.
+
+```bash
+MOBILE_APP_BUNDLE_ID=com.example.app QA_EXECUTION_ADAPTER=mobilewright npm start
+```
+
+Submit runs with `platform: "android"` or `platform: "ios"`; `targetId` is the selected device ID/UDID. The app must already be installed. The adapter supports semantic native locators (`role`, `text`, `label`, `testId`) and bounded actions documented in [the adapter contract](docs/architecture/adapter-contract.md). It rejects CSS/XPath and arbitrary script execution on native screens.
+
+Free-form test step `instruction` is descriptive only. Real execution requires a structured JSON `action`. AI-authored cases remain pending until human review.
 
 ## Repository boundaries
 - [Wireflow Review](https://github.com/popark05/wireflow-review) owns planning-time flow review.
@@ -41,8 +51,8 @@ Test steps executed by Playwright must contain a structured JSON `action`. Suppo
 ## Current limitations
 - Test cases and test runs are currently in-memory; PostgreSQL persistence is a subsequent milestone.
 - Playwright execution is opt-in and requires browser installation in the runtime image.
-- Mobilewright adapter and device/session provisioning are not implemented yet.
-- Evidence binary storage, authentication, tenant isolation and retention policies are not implemented.
+- Mobilewright adapter is implemented with unit/fake-driver tests; physical device and simulator E2E execution has not yet been validated in CI.
+- Hybrid WebView/native context switching, automatic APK/IPA installation, evidence binary storage, authentication, tenant isolation and retention policies are not implemented.
 
 ## Core rules
 1. Flow and Test Case are distinct aggregates.

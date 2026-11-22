@@ -1,4 +1,6 @@
 import { ManagedPlaywrightStepExecutor } from "../adapters/managed-playwright-step-executor.js";
+import { MobilewrightSessionManager } from "../adapters/mobilewright-session-manager.js";
+import { MobilewrightStepExecutor } from "../adapters/mobilewright-step-executor.js";
 import { PlaywrightSessionManager, type PlaywrightBrowserName } from "../adapters/playwright-session-manager.js";
 import { TestRunService } from "../domain/test-run.js";
 import { buildApp } from "./app.js";
@@ -18,10 +20,18 @@ if (adapter === "playwright") {
     runs: new TestRunService(new ManagedPlaywrightStepExecutor(sessions)),
     onClose: () => sessions.close()
   });
+} else if (adapter === "mobilewright") {
+  const bundleId = process.env.MOBILE_APP_BUNDLE_ID;
+  if (!bundleId) throw new Error("MOBILE_APP_BUNDLE_ID is required when QA_EXECUTION_ADAPTER=mobilewright");
+  const sessions = new MobilewrightSessionManager(bundleId);
+  app = buildApp({
+    runs: new TestRunService(new MobilewrightStepExecutor(sessions)),
+    onClose: () => sessions.close()
+  });
 } else if (adapter === "mock") {
   app = buildApp();
 } else {
-  throw new Error("QA_EXECUTION_ADAPTER must be mock or playwright");
+  throw new Error("QA_EXECUTION_ADAPTER must be mock, playwright or mobilewright");
 }
 
 try {
