@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS qa_test_case (
 CREATE TABLE IF NOT EXISTS qa_test_case_version (
   test_case_id UUID NOT NULL REFERENCES qa_test_case(test_case_id) ON DELETE RESTRICT,
   version INTEGER NOT NULL CHECK (version > 0),
-  title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 240),
-  description TEXT,
+  title VARCHAR(240) NOT NULL CHECK (title <> ''),
+  description VARCHAR(4000),
   source TEXT NOT NULL CHECK (source IN ('manual', 'ai')),
   steps JSONB NOT NULL CHECK (jsonb_typeof(steps) = 'array' AND jsonb_array_length(steps) > 0),
   created_at TIMESTAMPTZ NOT NULL,
@@ -43,9 +43,9 @@ CREATE TABLE IF NOT EXISTS qa_test_case_review (
   review_id UUID PRIMARY KEY,
   test_case_id UUID NOT NULL,
   version INTEGER NOT NULL,
-  reviewer_id TEXT NOT NULL CHECK (length(reviewer_id) BETWEEN 1 AND 200),
+  reviewer_id VARCHAR(200) NOT NULL CHECK (reviewer_id <> ''),
   decision TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
-  comment TEXT CHECK (comment IS NULL OR length(comment) <= 4000),
+  comment VARCHAR(4000),
   reviewed_at TIMESTAMPTZ NOT NULL,
   UNIQUE (test_case_id, version),
   FOREIGN KEY (test_case_id, version)

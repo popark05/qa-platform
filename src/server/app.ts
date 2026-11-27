@@ -40,10 +40,6 @@ const reviewSchema = {
     expectedVersion: { type: "integer", minimum: 1 }
   }
 } as const;
-const submitSchema = {
-  type: "object", additionalProperties: false,
-  properties: { expectedVersion: { type: "integer", minimum: 1 } }
-} as const;
 const runSchema = {
   type: "object", additionalProperties: false, required: ["platform", "targetId"],
   properties: { platform: { type: "string", enum: ["web", "android", "ios", "hybrid"] }, targetId: { type: "string", minLength: 1, maxLength: 200 } }
@@ -93,10 +89,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     return testCase;
   });
 
-  app.post<{ Params: { testCaseId: string }; Body: { expectedVersion?: number } }>(
-    "/v1/test-cases/:testCaseId/submissions", { schema: { body: submitSchema } },
+  app.post<{ Params: { testCaseId: string }; Body: { expectedVersion?: number } | undefined }>(
+    "/v1/test-cases/:testCaseId/submissions",
     async (request, reply) => {
-      const submitted = await testCases.submitForReview(request.params.testCaseId, request.body.expectedVersion);
+      const expectedVersion = request.body?.expectedVersion;
+      if (expectedVersion !== undefined && (!Number.isInteger(expectedVersion) || expectedVersion < 1)) {
+        return reply.code(400).send({ error: "invalid_expected_version" });
+      }
+      const submitted = await testCases.submitForReview(request.params.testCaseId, expectedVersion);
       if (!submitted) return reply.code(409).send({ error: "test_case_cannot_be_submitted_or_version_conflict" });
       return submitted;
     }
