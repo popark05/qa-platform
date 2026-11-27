@@ -23,6 +23,19 @@ QA Platform manages test intent and execution for web, mobile, and hybrid applic
 
 The default execution adapter is a mock implementation.
 
+### PostgreSQL Test Run persistence
+
+Set `DATABASE_URL` to persist Test Runs, ordered Step Results, and Evidence References in PostgreSQL. Apply migrations before starting the API:
+
+```bash
+DATABASE_URL=postgres://qa:qa@localhost:5432/qa_platform npm run migrate
+DATABASE_URL=postgres://qa:qa@localhost:5432/qa_platform npm start
+```
+
+When `DATABASE_URL` is omitted, the API uses the in-memory Test Run repository. Test Case authoring and review are still in-memory; this milestone persists execution history only.
+
+A Test Run is inserted with status `running` before the first step starts. Each Step Result is committed independently in execution order. The final status (`passed` or `failed`) and finish time are committed after execution. If the process terminates unexpectedly, an unfinished run remains visible as `running` for operational reconciliation rather than disappearing.
+
 ### Web execution
 
 ```bash
@@ -73,10 +86,10 @@ See [evidence integration architecture](docs/architecture/evidence-integration.m
 - Cross-repository communication uses versioned contracts and APIs. No product writes directly to another product's database.
 
 ## Current limitations
-- Test cases and test runs are currently in-memory; PostgreSQL persistence is a subsequent milestone.
+- Test Cases and review records remain in-memory. Test Runs, Step Results, and Evidence References use PostgreSQL when `DATABASE_URL` is configured; otherwise they remain in-memory.
 - Playwright execution is opt-in and requires browser installation in the runtime image.
 - Mobilewright adapter is implemented with unit/fake-driver tests; physical device and simulator E2E execution has not yet been validated in CI.
-- Hybrid WebView/native context switching, automatic APK/IPA installation, authentication, tenant isolation and retention policies are not implemented. Evidence references are attached to in-memory Test Runs; durable persistence is still pending.
+- Hybrid WebView/native context switching, automatic APK/IPA installation, authentication, tenant isolation and retention policies are not implemented. Evidence references are stored as relational rows linked to Step Results when PostgreSQL is enabled.
 
 ## Core rules
 1. Flow and Test Case are distinct aggregates.

@@ -98,7 +98,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   );
 
   app.get<{ Params: { runId: string } }>("/v1/test-runs/:runId", async (request, reply) => {
-    const run = runs.get(request.params.runId);
+    const run = await runs.get(request.params.runId);
     if (!run) return reply.code(404).send({ error: "test_run_not_found" });
     return run;
   });
@@ -107,14 +107,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     "/v1/test-runs/:runId/steps/:stepId/evidence", { schema: { body: attachEvidenceSchema } },
     async (request, reply) => {
       if (!options.evidenceResolver) return reply.code(501).send({ error: "evidence_resolver_not_configured" });
-      const run = runs.get(request.params.runId);
+      const run = await runs.get(request.params.runId);
       if (!run) return reply.code(404).send({ error: "test_run_not_found" });
       if (!run.stepResults.some((step) => step.stepId === request.params.stepId)) {
         return reply.code(404).send({ error: "test_step_result_not_found" });
       }
       try {
         const reference = await options.evidenceResolver.resolve(request.body.evidenceId);
-        const updated = runs.attachEvidence(request.params.runId, request.params.stepId, reference);
+        const updated = await runs.attachEvidence(request.params.runId, request.params.stepId, reference);
         return reply.code(200).send(updated);
       } catch (error) {
         if (error instanceof EvidenceNotFoundError) return reply.code(404).send({ error: "source_evidence_not_found" });

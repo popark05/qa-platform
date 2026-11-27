@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { TestCase, TestStep } from "./test-case.js";
 import type { EvidenceReference } from "./evidence-reference.js";
+import { InMemoryTestRunRepository, type TestRunRepository } from "./test-run-repository.js";
 
-export type TestRunStatus = "passed" | "failed";
+export type TestRunStatus = "running" | "passed" | "failed";
 export interface StepExecutionResult {
   stepId: string;
   status: "passed" | "failed";
@@ -18,7 +19,7 @@ export interface TestRun {
   status: TestRunStatus;
   stepResults: StepExecutionResult[];
   startedAt: string;
-  finishedAt: string;
+  finishedAt?: string;
 }
 export interface StepExecutionContext {
   runId: string;
@@ -31,58 +32,68 @@ export interface StepExecutor {
 
 export class MockStepExecutor implements StepExecutor {
   async execute(step: TestStep, index: number): Promise<StepExecutionResult> {
-    return {
-      stepId: step.stepId,
-      status: "passed",
-      message: `Mock execution completed: ${step.instruction}`,
-      durationMs: index + 1
-    };
+    return { stepId: step.stepId, status: "passed", message: `Mock execution completed: ${step.instruction}`, durationMs: index + 1 };
   }
 }
 
 export class TestRunService {
-  private readonly runs = new Map<string, TestRun>();
-  constructor(private readonly executor: StepExecutor = new MockStepExecutor()) {}
+  constructor(
+    private readonly executor: StepExecutor = new MockStepExecutor(),
+    private readonly repository: TestRunRepository = new InMemoryTestRunRepository()
+  ) {}
 
   async execute(testCase: TestCase, target: TestRun["target"]): Promise<TestRun> {
     if (testCase.status !== "approved") throw new Error("test_case_not_approved");
     const runId = randomUUID();
     const startedAt = new Date().toISOString();
-    const stepResults: StepExecutionResult[] = [];
+    await this.repository.create({
+      runId, testCaseId: testCase.testCaseId, testCaseVersion: testCase.version,
+      target, startedAt
+    });
+
+    let status: Exclude<TestRunStatus, "running"> = "passed";
     try {
       for (const [index, step] of testCase.steps.entries()) {
-        const result = await this.executor.execute(step, index, { runId, target });
-        stepResults.push(result);
-        if (result.status === "failed") break;
+        let result: StepExecutionResult;
+        const stepStartedAt = Date.now();
+        try {
+          result = await this.executor.execute(step, index, { runId, target });
+          if (result.stepId !== step.stepId) throw new Error("executor_step_id_mismatch");
+        } catch (error) {
+          result = {
+            stepId: step.stepId, status: "failed",
+            message: error instanceof Error ? error.message.slice(0, 2000) : "step_execution_failed",
+            durationMs: Date.now() - stepStartedAt
+          };
+        }
+        await this.repository.appendStepResult(runId, result, index);
+        if (result.status === "failed") {
+          status = "failed";
+          break;
+        }
       }
+    } catch (error) {
+      status = "failed";
+      throw error;
     } finally {
-      await this.executor.closeRun?.(runId);
+      try {
+        await this.executor.closeRun?.(runId);
+      } catch {
+        status = "failed";
+      }
     }
-    const run: TestRun = {
-      runId,
-      testCaseId: testCase.testCaseId,
-      testCaseVersion: testCase.version,
-      target,
-      status: stepResults.every((result) => result.status === "passed") && stepResults.length === testCase.steps.length ? "passed" : "failed",
-      stepResults,
-      startedAt,
-      finishedAt: new Date().toISOString()
-    };
-    this.runs.set(runId, run);
-    return run;
+
+    if (status === "passed" && testCase.steps.length === 0) status = "failed";
+    if (status === "passed") {
+      const persisted = await this.repository.get(runId);
+      if ((persisted?.stepResults.length ?? 0) !== testCase.steps.length) status = "failed";
+    }
+    return this.repository.complete(runId, status, new Date().toISOString());
   }
 
-  get(runId: string): TestRun | undefined { return this.runs.get(runId); }
+  get(runId: string): Promise<TestRun | undefined> { return this.repository.get(runId); }
 
-  attachEvidence(runId: string, stepId: string, reference: EvidenceReference): TestRun | undefined {
-    const run = this.runs.get(runId);
-    if (!run) return undefined;
-    const step = run.stepResults.find((item) => item.stepId === stepId);
-    if (!step) return undefined;
-    const references = step.evidenceRefs ?? [];
-    if (!references.some((item) => item.sourceSystem === reference.sourceSystem && item.evidenceId === reference.evidenceId)) {
-      step.evidenceRefs = [...references, reference];
-    }
-    return run;
+  attachEvidence(runId: string, stepId: string, reference: EvidenceReference): Promise<TestRun | undefined> {
+    return this.repository.attachEvidence(runId, stepId, reference);
   }
 }
