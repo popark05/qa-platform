@@ -11,7 +11,7 @@ interface StepRow {
   step_id: string; status: "passed" | "failed"; message: string; duration_ms: number;
 }
 interface EvidenceRow {
-  source_system: "reverse-screen"; evidence_id: string; contract_version: "1.0";
+  step_id: string; source_system: "reverse-screen"; evidence_id: string; contract_version: "1.0";
   kind: EvidenceReference["kind"]; content_type: string; byte_size: string | number;
   sha256: string; storage_uri: string; captured_at: Date | string;
 }
