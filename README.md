@@ -42,6 +42,30 @@ Submit runs with `platform: "android"` or `platform: "ios"`; `targetId` is the s
 
 Free-form test step `instruction` is descriptive only. Real execution requires a structured JSON `action`. AI-authored cases remain pending until human review.
 
+
+## Reverse Screen evidence integration
+
+Configure `REVERSE_SCREEN_BASE_URL` to enable step-level evidence references:
+
+```bash
+REVERSE_SCREEN_BASE_URL=http://localhost:3000 npm start
+```
+
+After a Test Run is created, attach an evidence artifact owned by Reverse Screen:
+
+```http
+POST /v1/test-runs/{runId}/steps/{stepId}/evidence
+Content-Type: application/json
+
+{ "evidenceId": "reverse-screen-evidence-uuid" }
+```
+
+QA Platform resolves metadata through Reverse Screen's versioned `/v1/evidence-artifacts/{evidenceId}` API, validates it, and attaches a versioned reference to the Step Result. Retrieve the updated run with `GET /v1/test-runs/{runId}`. Duplicate attachments are idempotent.
+
+The contract is defined in [reverse-screen-evidence-reference.v1.schema.json](contracts/reverse-screen-evidence-reference.v1.schema.json). QA Platform stores only stable evidence metadata references, never binary bytes or temporary presigned URLs. To access the binary, a client requests a fresh download URL from Reverse Screen.
+
+See [evidence integration architecture](docs/architecture/evidence-integration.md) for the request flow and current boundaries.
+
 ## Repository boundaries
 - [Wireflow Review](https://github.com/popark05/wireflow-review) owns planning-time flow review.
 - [Reverse Screen](https://github.com/popark05/reverse-screen) owns runtime discovery and screen/flow models.
@@ -52,7 +76,7 @@ Free-form test step `instruction` is descriptive only. Real execution requires a
 - Test cases and test runs are currently in-memory; PostgreSQL persistence is a subsequent milestone.
 - Playwright execution is opt-in and requires browser installation in the runtime image.
 - Mobilewright adapter is implemented with unit/fake-driver tests; physical device and simulator E2E execution has not yet been validated in CI.
-- Hybrid WebView/native context switching, automatic APK/IPA installation, evidence binary storage, authentication, tenant isolation and retention policies are not implemented.
+- Hybrid WebView/native context switching, automatic APK/IPA installation, authentication, tenant isolation and retention policies are not implemented. Evidence references are attached to in-memory Test Runs; durable persistence is still pending.
 
 ## Core rules
 1. Flow and Test Case are distinct aggregates.

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/popark05/qa-platform/contracts/reverse-screen-evidence-reference.v1.schema.json",
+  "title": "Reverse Screen Evidence Reference v1",
+  "description": "Immutable metadata reference to an EvidenceArtifact owned by Reverse Screen. Temporary signed URLs and binary bytes are intentionally excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "sourceSystem",
+    "evidenceId",
+    "kind",
+    "contentType",
+    "byteSize",
+    "sha256",
+    "storageUri",
+    "capturedAt"
+  ],
+  "properties": {
+    "contractVersion": { "const": "1.0" },
+    "sourceSystem": { "const": "reverse-screen" },
+    "evidenceId": { "type": "string", "format": "uuid" },
+    "kind": {
+      "type": "string",
+      "enum": ["screenshot", "video", "dom_snapshot", "accessibility_tree", "log", "network_trace"]
+    },
+    "contentType": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "byteSize": { "type": "integer", "minimum": 1 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "storageUri": { "type": "string", "pattern": "^s3://[^/]+/.+" },
+    "capturedAt": { "type": "string", "format": "date-time" }
+  }
+}

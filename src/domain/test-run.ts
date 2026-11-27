@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { TestCase, TestStep } from "./test-case.js";
+import type { EvidenceReference } from "./evidence-reference.js";
 
 export type TestRunStatus = "passed" | "failed";
 export interface StepExecutionResult {
@@ -7,6 +8,7 @@ export interface StepExecutionResult {
   status: "passed" | "failed";
   message: string;
   durationMs: number;
+  evidenceRefs?: EvidenceReference[];
 }
 export interface TestRun {
   runId: string;
@@ -39,6 +41,7 @@ export class MockStepExecutor implements StepExecutor {
 }
 
 export class TestRunService {
+  private readonly runs = new Map<string, TestRun>();
   constructor(private readonly executor: StepExecutor = new MockStepExecutor()) {}
 
   async execute(testCase: TestCase, target: TestRun["target"]): Promise<TestRun> {
@@ -55,7 +58,7 @@ export class TestRunService {
     } finally {
       await this.executor.closeRun?.(runId);
     }
-    return {
+    const run: TestRun = {
       runId,
       testCaseId: testCase.testCaseId,
       testCaseVersion: testCase.version,
@@ -65,5 +68,21 @@ export class TestRunService {
       startedAt,
       finishedAt: new Date().toISOString()
     };
+    this.runs.set(runId, run);
+    return run;
+  }
+
+  get(runId: string): TestRun | undefined { return this.runs.get(runId); }
+
+  attachEvidence(runId: string, stepId: string, reference: EvidenceReference): TestRun | undefined {
+    const run = this.runs.get(runId);
+    if (!run) return undefined;
+    const step = run.stepResults.find((item) => item.stepId === stepId);
+    if (!step) return undefined;
+    const references = step.evidenceRefs ?? [];
+    if (!references.some((item) => item.sourceSystem === reference.sourceSystem && item.evidenceId === reference.evidenceId)) {
+      step.evidenceRefs = [...references, reference];
+    }
+    return run;
   }
 }

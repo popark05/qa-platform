@@ -2,12 +2,17 @@ import { ManagedPlaywrightStepExecutor } from "../adapters/managed-playwright-st
 import { MobilewrightSessionManager } from "../adapters/mobilewright-session-manager.js";
 import { MobilewrightStepExecutor } from "../adapters/mobilewright-step-executor.js";
 import { PlaywrightSessionManager, type PlaywrightBrowserName } from "../adapters/playwright-session-manager.js";
+import { ReverseScreenEvidenceClient } from "../adapters/reverse-screen-evidence-client.js";
 import { TestRunService } from "../domain/test-run.js";
 import { buildApp } from "./app.js";
 
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? "0.0.0.0";
 const adapter = process.env.QA_EXECUTION_ADAPTER ?? "mock";
+const evidenceResolver = process.env.REVERSE_SCREEN_BASE_URL
+  ? new ReverseScreenEvidenceClient(process.env.REVERSE_SCREEN_BASE_URL)
+  : undefined;
+const evidenceOptions = evidenceResolver ? { evidenceResolver } : {};
 
 let app;
 if (adapter === "playwright") {
@@ -18,6 +23,7 @@ if (adapter === "playwright") {
   const sessions = new PlaywrightSessionManager(browserName);
   app = buildApp({
     runs: new TestRunService(new ManagedPlaywrightStepExecutor(sessions)),
+    ...evidenceOptions,
     onClose: () => sessions.close()
   });
 } else if (adapter === "mobilewright") {
@@ -26,10 +32,11 @@ if (adapter === "playwright") {
   const sessions = new MobilewrightSessionManager(bundleId);
   app = buildApp({
     runs: new TestRunService(new MobilewrightStepExecutor(sessions)),
+    ...evidenceOptions,
     onClose: () => sessions.close()
   });
 } else if (adapter === "mock") {
-  app = buildApp();
+  app = buildApp(evidenceOptions);
 } else {
   throw new Error("QA_EXECUTION_ADAPTER must be mock, playwright or mobilewright");
 }

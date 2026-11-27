@@ -1,6 +1,9 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { TestCaseStore } from "../domain/test-case.js";
 import { TestRunService } from "../domain/test-run.js";
+import {
+  EvidenceNotFoundError, EvidenceSourceUnavailableError, type EvidenceResolver
+} from "../domain/evidence-reference.js";
 
 const createTestCaseSchema = {
   type: "object", additionalProperties: false, required: ["title", "source", "steps"],
@@ -22,10 +25,15 @@ const runSchema = {
   type: "object", additionalProperties: false, required: ["platform", "targetId"],
   properties: { platform: { type: "string", enum: ["web", "android", "ios", "hybrid"] }, targetId: { type: "string", minLength: 1, maxLength: 200 } }
 } as const;
+const attachEvidenceSchema = {
+  type: "object", additionalProperties: false, required: ["evidenceId"],
+  properties: { evidenceId: { type: "string", format: "uuid" } }
+} as const;
 
 export interface AppOptions {
   store?: TestCaseStore;
   runs?: TestRunService;
+  evidenceResolver?: EvidenceResolver;
   onClose?: () => Promise<void>;
 }
 
@@ -84,6 +92,36 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
         return reply.code(201).send(run);
       } catch (error) {
         if (error instanceof Error && error.message === "test_case_not_approved") return reply.code(409).send({ error: error.message });
+        throw error;
+      }
+    }
+  );
+
+  app.get<{ Params: { runId: string } }>("/v1/test-runs/:runId", async (request, reply) => {
+    const run = runs.get(request.params.runId);
+    if (!run) return reply.code(404).send({ error: "test_run_not_found" });
+    return run;
+  });
+
+  app.post<{ Params: { runId: string; stepId: string }; Body: { evidenceId: string } }>(
+    "/v1/test-runs/:runId/steps/:stepId/evidence", { schema: { body: attachEvidenceSchema } },
+    async (request, reply) => {
+      if (!options.evidenceResolver) return reply.code(501).send({ error: "evidence_resolver_not_configured" });
+      const run = runs.get(request.params.runId);
+      if (!run) return reply.code(404).send({ error: "test_run_not_found" });
+      if (!run.stepResults.some((step) => step.stepId === request.params.stepId)) {
+        return reply.code(404).send({ error: "test_step_result_not_found" });
+      }
+      try {
+        const reference = await options.evidenceResolver.resolve(request.body.evidenceId);
+        const updated = runs.attachEvidence(request.params.runId, request.params.stepId, reference);
+        return reply.code(200).send(updated);
+      } catch (error) {
+        if (error instanceof EvidenceNotFoundError) return reply.code(404).send({ error: "source_evidence_not_found" });
+        if (error instanceof EvidenceSourceUnavailableError) {
+          request.log.error(error);
+          return reply.code(502).send({ error: "evidence_source_unavailable" });
+        }
         throw error;
       }
     }
