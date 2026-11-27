@@ -44,7 +44,13 @@ Test Case API:
 
 The database stores each version as a separate row keyed by `(test_case_id, version)`. The repository exposes insert-only version creation and no update/delete operation for version content. Submission and review transitions lock the aggregate row and verify the expected version in one transaction. Test Runs have a composite foreign key to the exact Test Case Version they execute, so later edits do not change historical run provenance.
 
-A Test Run is inserted with status `running` before the first step starts. Each Step Result is committed independently in execution order. The final status (`passed` or `failed`) and finish time are committed after execution. If the process terminates unexpectedly, an unfinished run remains visible as `running` for operational reconciliation rather than disappearing.
+A Test Run is inserted with status `running` before the first step starts. Each Step Result is committed independently in execution order. The final status (`passed` or `failed`) and finish time are committed after execution. Active executions refresh `last_heartbeat_at` every 10 seconds and after each persisted step. A PostgreSQL-backed recovery worker runs at startup and periodically, atomically marking runs whose heartbeat is older than the configured threshold as `abandoned`. Recovery uses `FOR UPDATE SKIP LOCKED`, so multiple API instances can safely run the worker concurrently. Abandoned runs retain their completed step results and are terminal; they are not silently retried.
+
+Recovery settings:
+- `QA_RUN_STALE_AFTER_SECONDS` (default `120`, minimum `30`): heartbeat age after which a running Test Run is considered abandoned.
+- `QA_RUN_RECOVERY_INTERVAL_MS` (default `30000`, minimum `5000`): recovery scan interval.
+
+The in-memory repository does not persist runs across process restarts and its recovery operation is intentionally a no-op.
 
 ### Web execution
 

@@ -10,6 +10,7 @@ import type { Pool } from "pg";
 
 const migration = await readFile(new URL("../db/migrations/001_test_run.sql", import.meta.url), "utf8");
 const testCaseMigration = await readFile(new URL("../db/migrations/002_test_case_review.sql", import.meta.url), "utf8");
+const recoveryMigration = await readFile(new URL("../db/migrations/004_test_run_recovery.sql", import.meta.url), "utf8");
 const evidence: EvidenceReference = {
   contractVersion: "1.0", sourceSystem: "reverse-screen",
   evidenceId: "e0e0e0e0-1111-4111-8111-e0e0e0e0e0e0",
@@ -31,6 +32,7 @@ async function setup() {
   const database = newDb();
   database.public.none(migration);
   database.public.none(testCaseMigration);
+  database.public.none(recoveryMigration);
   database.public.none(`INSERT INTO qa_test_case (test_case_id, current_version, source, status, created_at, updated_at)
     VALUES ('c0c0c0c0-1111-4111-8111-c0c0c0c0c0c0', 3, 'manual', 'approved', '2026-11-27T00:00:00.000Z', '2026-11-27T00:00:00.000Z')`);
   database.public.none(`INSERT INTO qa_test_case_version (test_case_id, version, title, source, steps, created_at)

@@ -62,6 +62,25 @@ test("real PostgreSQL persists immutable versions, review decisions and exact Te
     );
     assert.equal((await runs.get(runId))?.testCaseVersion, 1);
 
+    const staleRunId = randomUUID();
+    await runs.create({
+      runId: staleRunId, testCaseId: created.testCaseId, testCaseVersion: 2,
+      target: { platform: "web", targetId: "stale-worker" }, startedAt
+    });
+    await pool.query("UPDATE qa_test_run SET last_heartbeat_at = now() - interval '10 minutes' WHERE run_id = $1", [staleRunId]);
+    const activeRunId = randomUUID();
+    await runs.create({
+      runId: activeRunId, testCaseId: created.testCaseId, testCaseVersion: 2,
+      target: { platform: "web", targetId: "active-worker" }, startedAt
+    });
+    await runs.heartbeat(activeRunId, new Date().toISOString());
+    const abandoned = await runs.recoverStaleRuns(
+      new Date(Date.now() - 60_000).toISOString(), new Date().toISOString()
+    );
+    assert.deepEqual(abandoned, [staleRunId]);
+    assert.equal((await runs.get(staleRunId))?.status, "abandoned");
+    assert.equal((await runs.get(activeRunId))?.status, "running");
+
     const concurrent = await cases.create({
       title: "Concurrent review integration case",
       source: "manual",

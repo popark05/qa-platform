@@ -58,7 +58,7 @@ export class PostgresTestRunRepository implements TestRunRepository {
     }
   }
 
-  async complete(runId: string, status: Exclude<TestRunStatus, "running">, finishedAt: string): Promise<TestRun> {
+  async complete(runId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun> {
     const result = await this.pool.query(
       `UPDATE qa_test_run SET status = $2, finished_at = $3
        WHERE run_id = $1 AND status = 'running' RETURNING run_id`,

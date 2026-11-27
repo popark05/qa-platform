@@ -3,7 +3,7 @@ import type { TestCase, TestStep } from "./test-case.js";
 import type { EvidenceReference } from "./evidence-reference.js";
 import { InMemoryTestRunRepository, type TestRunRepository } from "./test-run-repository.js";
 
-export type TestRunStatus = "running" | "passed" | "failed";
+export type TestRunStatus = "running" | "passed" | "failed" | "abandoned";
 export interface StepExecutionResult {
   stepId: string;
   status: "passed" | "failed";
@@ -51,7 +51,12 @@ export class TestRunService {
       target, startedAt
     });
 
-    let status: Exclude<TestRunStatus, "running"> = "passed";
+    let status: "passed" | "failed" = "passed";
+    let heartbeatFailed = false;
+    const heartbeatTimer = setInterval(() => {
+      void this.repository.heartbeat(runId, new Date().toISOString()).catch(() => { heartbeatFailed = true; });
+    }, 10_000);
+    heartbeatTimer.unref?.();
     try {
       for (const [index, step] of testCase.steps.entries()) {
         let result: StepExecutionResult;
@@ -76,6 +81,7 @@ export class TestRunService {
       status = "failed";
       throw error;
     } finally {
+      clearInterval(heartbeatTimer);
       try {
         await this.executor.closeRun?.(runId);
       } catch {
@@ -83,6 +89,7 @@ export class TestRunService {
       }
     }
 
+    if (heartbeatFailed) status = "failed";
     if (status === "passed" && testCase.steps.length === 0) status = "failed";
     if (status === "passed") {
       const persisted = await this.repository.get(runId);

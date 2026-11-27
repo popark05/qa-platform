@@ -10,8 +10,10 @@ export interface NewTestRun {
 }
 export interface TestRunRepository {
   create(input: NewTestRun): Promise<TestRun>;
+  heartbeat(runId: string, at: string): Promise<void>;
+  recoverStaleRuns(staleBefore: string, finishedAt: string): Promise<string[]>;
   appendStepResult(runId: string, result: StepExecutionResult, position: number): Promise<void>;
-  complete(runId: string, status: Exclude<TestRunStatus, "running">, finishedAt: string): Promise<TestRun>;
+  complete(runId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun>;
   get(runId: string): Promise<TestRun | undefined>;
   attachEvidence(runId: string, stepId: string, reference: EvidenceReference): Promise<TestRun | undefined>;
 }
@@ -28,6 +30,14 @@ export class InMemoryTestRunRepository implements TestRunRepository {
     return structuredClone(run);
   }
 
+  async heartbeat(runId: string, _at: string): Promise<void> {
+    if (!this.runs.has(runId)) throw new Error("test_run_not_found");
+  }
+
+  async recoverStaleRuns(_staleBefore: string, _finishedAt: string): Promise<string[]> {
+    return [];
+  }
+
   async appendStepResult(runId: string, result: StepExecutionResult, position: number): Promise<void> {
     const run = this.runs.get(runId);
     if (!run || run.status !== "running") throw new Error("test_run_not_running");
@@ -39,7 +49,7 @@ export class InMemoryTestRunRepository implements TestRunRepository {
     );
   }
 
-  async complete(runId: string, status: Exclude<TestRunStatus, "running">, finishedAt: string): Promise<TestRun> {
+  async complete(runId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun> {
     const run = this.runs.get(runId);
     if (!run || run.status !== "running") throw new Error("test_run_not_running");
     run.status = status;

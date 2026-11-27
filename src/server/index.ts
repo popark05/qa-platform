@@ -15,6 +15,11 @@ const host = process.env.HOST ?? "0.0.0.0";
 const adapter = process.env.QA_EXECUTION_ADAPTER ?? "mock";
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL }) : undefined;
 const runRepository = pool ? new PostgresTestRunRepository(pool) : undefined;
+const staleAfterSeconds = Number(process.env.QA_RUN_STALE_AFTER_SECONDS ?? 120);
+const recoveryIntervalMs = Number(process.env.QA_RUN_RECOVERY_INTERVAL_MS ?? 30_000);
+if (!Number.isFinite(staleAfterSeconds) || staleAfterSeconds < 30) throw new Error("QA_RUN_STALE_AFTER_SECONDS must be at least 30");
+if (!Number.isFinite(recoveryIntervalMs) || recoveryIntervalMs < 5_000) throw new Error("QA_RUN_RECOVERY_INTERVAL_MS must be at least 5000");
+let recoveryTimer: ReturnType<typeof setInterval> | undefined;
 const testCaseRepository = pool ? new PostgresTestCaseRepository(pool) : new InMemoryTestCaseRepository();
 const createRunService = (executor?: ConstructorParameters<typeof TestRunService>[0]) =>
   new TestRunService(executor, runRepository);
@@ -23,6 +28,7 @@ const evidenceResolver = process.env.REVERSE_SCREEN_BASE_URL
   : undefined;
 const evidenceOptions = evidenceResolver ? { evidenceResolver } : {};
 const closeResources = async (closeAdapter?: () => Promise<void>) => {
+  if (recoveryTimer) clearInterval(recoveryTimer);
   try { await closeAdapter?.(); }
   finally { await pool?.end(); }
 };
@@ -55,6 +61,19 @@ if (adapter === "playwright") {
 
 try {
   await app.listen({ port, host });
+  if (runRepository) {
+    const recoverStaleRuns = async () => {
+      const now = Date.now();
+      const staleBefore = new Date(now - staleAfterSeconds * 1000).toISOString();
+      const abandoned = await runRepository.recoverStaleRuns(staleBefore, new Date(now).toISOString());
+      if (abandoned.length > 0) app.log.warn({ runIds: abandoned }, "Marked stale Test Runs as abandoned");
+    };
+    await recoverStaleRuns();
+    recoveryTimer = setInterval(() => {
+      void recoverStaleRuns().catch((error) => app.log.error(error, "Test Run recovery failed"));
+    }, recoveryIntervalMs);
+    recoveryTimer.unref?.();
+  }
 } catch (error) {
   app.log.error(error);
   process.exitCode = 1;
