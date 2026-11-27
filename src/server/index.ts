@@ -5,6 +5,8 @@ import { PlaywrightSessionManager, type PlaywrightBrowserName } from "../adapter
 import { ReverseScreenEvidenceClient } from "../adapters/reverse-screen-evidence-client.js";
 import { TestRunService } from "../domain/test-run.js";
 import { PostgresTestRunRepository } from "../infrastructure/postgres-test-run-repository.js";
+import { PostgresTestCaseRepository } from "../infrastructure/postgres-test-case-repository.js";
+import { InMemoryTestCaseRepository } from "../domain/test-case.js";
 import { Pool } from "pg";
 import { buildApp } from "./app.js";
 
@@ -13,6 +15,7 @@ const host = process.env.HOST ?? "0.0.0.0";
 const adapter = process.env.QA_EXECUTION_ADAPTER ?? "mock";
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL }) : undefined;
 const runRepository = pool ? new PostgresTestRunRepository(pool) : undefined;
+const testCaseRepository = pool ? new PostgresTestCaseRepository(pool) : new InMemoryTestCaseRepository();
 const createRunService = (executor?: ConstructorParameters<typeof TestRunService>[0]) =>
   new TestRunService(executor, runRepository);
 const evidenceResolver = process.env.REVERSE_SCREEN_BASE_URL
@@ -32,21 +35,19 @@ if (adapter === "playwright") {
   }
   const sessions = new PlaywrightSessionManager(browserName);
   app = buildApp({
-    runs: createRunService(new ManagedPlaywrightStepExecutor(sessions)),
-    ...evidenceOptions,
-    onClose: () => closeResources(() => sessions.close())
+    testCases: testCaseRepository, runs: createRunService(new ManagedPlaywrightStepExecutor(sessions)),
+    ...evidenceOptions, onClose: () => closeResources(() => sessions.close())
   });
 } else if (adapter === "mobilewright") {
   const bundleId = process.env.MOBILE_APP_BUNDLE_ID;
   if (!bundleId) throw new Error("MOBILE_APP_BUNDLE_ID is required when QA_EXECUTION_ADAPTER=mobilewright");
   const sessions = new MobilewrightSessionManager(bundleId);
   app = buildApp({
-    runs: createRunService(new MobilewrightStepExecutor(sessions)),
-    ...evidenceOptions,
-    onClose: () => closeResources(() => sessions.close())
+    testCases: testCaseRepository, runs: createRunService(new MobilewrightStepExecutor(sessions)),
+    ...evidenceOptions, onClose: () => closeResources(() => sessions.close())
   });
 } else if (adapter === "mock") {
-  app = buildApp({ runs: createRunService(), ...evidenceOptions, onClose: () => closeResources() });
+  app = buildApp({ testCases: testCaseRepository, runs: createRunService(), ...evidenceOptions, onClose: () => closeResources() });
 } else {
   await pool?.end();
   throw new Error("QA_EXECUTION_ADAPTER must be mock, playwright or mobilewright");

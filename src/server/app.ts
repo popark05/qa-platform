@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { TestCaseStore } from "../domain/test-case.js";
+import { randomUUID } from "node:crypto";
+import { InMemoryTestCaseRepository, type TestCase } from "../domain/test-case.js";
+import type { TestCaseRepository } from "../domain/test-case-repository.js";
 import { TestRunService } from "../domain/test-run.js";
 import {
   EvidenceNotFoundError, EvidenceSourceUnavailableError, type EvidenceResolver
@@ -17,9 +19,30 @@ const createTestCaseSchema = {
     } } }
   }
 } as const;
+const createVersionSchema = {
+  type: "object", additionalProperties: false, required: ["expectedVersion", "title", "steps"],
+  properties: {
+    expectedVersion: { type: "integer", minimum: 1 },
+    title: { type: "string", minLength: 1, maxLength: 240 },
+    description: { type: "string", maxLength: 4000 },
+    steps: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, required: ["instruction"], properties: {
+      stepId: { type: "string" }, instruction: { type: "string", minLength: 1, maxLength: 2000 },
+      action: { type: "string", maxLength: 8000 }, expectedResult: { type: "string", maxLength: 2000 }
+    } } }
+  }
+} as const;
 const reviewSchema = {
   type: "object", additionalProperties: false, required: ["reviewerId", "decision"],
-  properties: { reviewerId: { type: "string", minLength: 1, maxLength: 200 }, decision: { type: "string", enum: ["approved", "rejected"] }, comment: { type: "string", maxLength: 4000 } }
+  properties: {
+    reviewerId: { type: "string", minLength: 1, maxLength: 200 },
+    decision: { type: "string", enum: ["approved", "rejected"] },
+    comment: { type: "string", maxLength: 4000 },
+    expectedVersion: { type: "integer", minimum: 1 }
+  }
+} as const;
+const submitSchema = {
+  type: "object", additionalProperties: false,
+  properties: { expectedVersion: { type: "integer", minimum: 1 } }
 } as const;
 const runSchema = {
   type: "object", additionalProperties: false, required: ["platform", "targetId"],
@@ -31,30 +54,33 @@ const attachEvidenceSchema = {
 } as const;
 
 export interface AppOptions {
-  store?: TestCaseStore;
+  testCases?: TestCaseRepository;
   runs?: TestRunService;
   evidenceResolver?: EvidenceResolver;
   onClose?: () => Promise<void>;
 }
 
+type StepInput = { stepId?: string; instruction: string; action?: string; expectedResult?: string };
+const normalizeSteps = (steps: StepInput[]) => steps.map((step) => ({
+  stepId: step.stepId ?? randomUUID(), instruction: step.instruction,
+  ...(step.action === undefined ? {} : { action: step.action }),
+  ...(step.expectedResult === undefined ? {} : { expectedResult: step.expectedResult })
+}));
+const isApproved = (testCase: TestCase) => testCase.status === "approved";
+
 export function buildApp(options: AppOptions = {}): FastifyInstance {
-  const store = options.store ?? new TestCaseStore();
+  const testCases = options.testCases ?? new InMemoryTestCaseRepository();
   const runs = options.runs ?? new TestRunService();
   const app = Fastify({ logger: true });
   app.addHook("onClose", async () => { await options.onClose?.(); });
   app.get("/health", async () => ({ status: "ok", service: "qa-platform" }));
-  app.get("/v1/test-cases", async () => ({ items: store.list() }));
+  app.get("/v1/test-cases", async () => ({ items: await testCases.list() }));
 
-  app.post<{ Body: { title: string; description?: string; source: "manual" | "ai"; steps: Array<{ stepId?: string; instruction: string; action?: string; expectedResult?: string }> } }>(
+  app.post<{ Body: { title: string; description?: string; source: "manual" | "ai"; steps: StepInput[] } }>(
     "/v1/test-cases", { schema: { body: createTestCaseSchema } },
     async (request, reply) => {
-      const testCase = store.create({
-        title: request.body.title, source: request.body.source,
-        steps: request.body.steps.map((step) => ({
-          stepId: step.stepId ?? crypto.randomUUID(), instruction: step.instruction,
-          ...(step.action === undefined ? {} : { action: step.action }),
-          ...(step.expectedResult === undefined ? {} : { expectedResult: step.expectedResult })
-        })),
+      const testCase = await testCases.create({
+        title: request.body.title, source: request.body.source, steps: normalizeSteps(request.body.steps),
         ...(request.body.description === undefined ? {} : { description: request.body.description })
       });
       return reply.code(201).send(testCase);
@@ -62,22 +88,47 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   );
 
   app.get<{ Params: { testCaseId: string } }>("/v1/test-cases/:testCaseId", async (request, reply) => {
-    const testCase = store.get(request.params.testCaseId);
+    const testCase = await testCases.get(request.params.testCaseId);
     if (!testCase) return reply.code(404).send({ error: "test_case_not_found" });
     return testCase;
   });
 
-  app.post<{ Params: { testCaseId: string } }>("/v1/test-cases/:testCaseId/submissions", async (request, reply) => {
-    const submitted = store.submitForReview(request.params.testCaseId);
-    if (!submitted) return reply.code(409).send({ error: "test_case_cannot_be_submitted" });
-    return submitted;
+  app.post<{ Params: { testCaseId: string }; Body: { expectedVersion?: number } }>(
+    "/v1/test-cases/:testCaseId/submissions", { schema: { body: submitSchema } },
+    async (request, reply) => {
+      const submitted = await testCases.submitForReview(request.params.testCaseId, request.body.expectedVersion);
+      if (!submitted) return reply.code(409).send({ error: "test_case_cannot_be_submitted_or_version_conflict" });
+      return submitted;
+    }
+  );
+
+  app.post<{ Params: { testCaseId: string }; Body: { expectedVersion: number; title: string; description?: string; steps: StepInput[] } }>(
+    "/v1/test-cases/:testCaseId/versions", { schema: { body: createVersionSchema } },
+    async (request, reply) => {
+      const next = await testCases.createVersion(request.params.testCaseId, {
+        expectedVersion: request.body.expectedVersion, title: request.body.title,
+        steps: normalizeSteps(request.body.steps),
+        ...(request.body.description === undefined ? {} : { description: request.body.description })
+      });
+      if (!next) return reply.code(409).send({ error: "test_case_version_conflict_or_review_pending" });
+      return reply.code(201).send(next);
+    }
+  );
+
+  app.get<{ Params: { testCaseId: string } }>("/v1/test-cases/:testCaseId/reviews", async (request, reply) => {
+    const testCase = await testCases.get(request.params.testCaseId);
+    if (!testCase) return reply.code(404).send({ error: "test_case_not_found" });
+    return { items: await testCases.listReviews(request.params.testCaseId) };
   });
 
-  app.post<{ Params: { testCaseId: string }; Body: { reviewerId: string; decision: "approved" | "rejected"; comment?: string } }>(
+  app.post<{ Params: { testCaseId: string }; Body: { reviewerId: string; decision: "approved" | "rejected"; comment?: string; expectedVersion?: number } }>(
     "/v1/test-cases/:testCaseId/reviews", { schema: { body: reviewSchema } },
     async (request, reply) => {
-      const review = store.review(request.params.testCaseId, request.body.reviewerId, request.body.decision, request.body.comment);
-      if (!review) return reply.code(409).send({ error: "test_case_not_pending_review" });
+      const review = await testCases.review(
+        request.params.testCaseId, request.body.reviewerId, request.body.decision,
+        request.body.comment, request.body.expectedVersion
+      );
+      if (!review) return reply.code(409).send({ error: "test_case_not_pending_review_or_version_conflict" });
       return reply.code(201).send(review);
     }
   );
@@ -85,8 +136,9 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.post<{ Params: { testCaseId: string }; Body: { platform: "web" | "android" | "ios" | "hybrid"; targetId: string } }>(
     "/v1/test-cases/:testCaseId/runs", { schema: { body: runSchema } },
     async (request, reply) => {
-      const testCase = store.get(request.params.testCaseId);
+      const testCase = await testCases.get(request.params.testCaseId);
       if (!testCase) return reply.code(404).send({ error: "test_case_not_found" });
+      if (!isApproved(testCase)) return reply.code(409).send({ error: "test_case_not_approved" });
       try {
         const run = await runs.execute(testCase, { platform: request.body.platform, targetId: request.body.targetId });
         return reply.code(201).send(run);
@@ -126,6 +178,5 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       }
     }
   );
-
   return app;
 }

@@ -23,16 +23,26 @@ QA Platform manages test intent and execution for web, mobile, and hybrid applic
 
 The default execution adapter is a mock implementation.
 
-### PostgreSQL Test Run persistence
+### PostgreSQL persistence
 
-Set `DATABASE_URL` to persist Test Runs, ordered Step Results, and Evidence References in PostgreSQL. Apply migrations before starting the API:
+Set `DATABASE_URL` to persist Test Cases, immutable Test Case Versions, submissions, Review Records, Test Runs, ordered Step Results, and Evidence References in PostgreSQL. Apply migrations before starting the API:
 
 ```bash
 DATABASE_URL=postgres://qa:qa@localhost:5432/qa_platform npm run migrate
 DATABASE_URL=postgres://qa:qa@localhost:5432/qa_platform npm start
 ```
 
-When `DATABASE_URL` is omitted, the API uses the in-memory Test Run repository. Test Case authoring and review are still in-memory; this milestone persists execution history only.
+When `DATABASE_URL` is omitted, the API uses in-memory repositories.
+
+Test Case API:
+- `POST /v1/test-cases` creates version 1. AI-authored cases enter `pending_review` and receive an initial submission record.
+- `GET /v1/test-cases` and `GET /v1/test-cases/{testCaseId}` return the current version.
+- `POST /v1/test-cases/{testCaseId}/submissions` submits the current draft. An optional `expectedVersion` provides optimistic concurrency protection.
+- `POST /v1/test-cases/{testCaseId}/reviews` records a human decision against the current version. An optional `expectedVersion` prevents stale review decisions.
+- `GET /v1/test-cases/{testCaseId}/reviews` returns the version-bound review history.
+- `POST /v1/test-cases/{testCaseId}/versions` creates a new draft from a complete replacement snapshot. The request must include `expectedVersion`; the current version is never edited in place. A new version must be submitted and approved before execution.
+
+The database stores each version as a separate row keyed by `(test_case_id, version)`. The repository exposes insert-only version creation and no update/delete operation for version content. Submission and review transitions lock the aggregate row and verify the expected version in one transaction. Test Runs have a composite foreign key to the exact Test Case Version they execute, so later edits do not change historical run provenance.
 
 A Test Run is inserted with status `running` before the first step starts. Each Step Result is committed independently in execution order. The final status (`passed` or `failed`) and finish time are committed after execution. If the process terminates unexpectedly, an unfinished run remains visible as `running` for operational reconciliation rather than disappearing.
 
@@ -54,7 +64,6 @@ MOBILE_APP_BUNDLE_ID=com.example.app QA_EXECUTION_ADAPTER=mobilewright npm start
 Submit runs with `platform: "android"` or `platform: "ios"`; `targetId` is the selected device ID/UDID. The app must already be installed. The adapter supports semantic native locators (`role`, `text`, `label`, `testId`) and bounded actions documented in [the adapter contract](docs/architecture/adapter-contract.md). It rejects CSS/XPath and arbitrary script execution on native screens.
 
 Free-form test step `instruction` is descriptive only. Real execution requires a structured JSON `action`. AI-authored cases remain pending until human review.
-
 
 ## Reverse Screen evidence integration
 
@@ -86,7 +95,8 @@ See [evidence integration architecture](docs/architecture/evidence-integration.m
 - Cross-repository communication uses versioned contracts and APIs. No product writes directly to another product's database.
 
 ## Current limitations
-- Test Cases and review records remain in-memory. Test Runs, Step Results, and Evidence References use PostgreSQL when `DATABASE_URL` is configured; otherwise they remain in-memory.
+- Test Case Version content is immutable through the repository/API contract, but database-level mutation guards and retention/archival controls are not yet installed.
+- Test Case, Review Record, and Test Run persistence require PostgreSQL; otherwise data remains in-memory.
 - Playwright execution is opt-in and requires browser installation in the runtime image.
 - Mobilewright adapter is implemented with unit/fake-driver tests; physical device and simulator E2E execution has not yet been validated in CI.
 - Hybrid WebView/native context switching, automatic APK/IPA installation, authentication, tenant isolation and retention policies are not implemented. Evidence references are stored as relational rows linked to Step Results when PostgreSQL is enabled.
