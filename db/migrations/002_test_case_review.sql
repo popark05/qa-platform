@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS qa_test_case_version (
   title VARCHAR(240) NOT NULL CHECK (title <> ''),
   description VARCHAR(4000),
   source TEXT NOT NULL CHECK (source IN ('manual', 'ai')),
-  steps JSONB NOT NULL CHECK (jsonb_typeof(steps) = 'array' AND jsonb_array_length(steps) > 0),
+  steps JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (test_case_id, version)
 );
