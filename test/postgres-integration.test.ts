@@ -52,6 +52,14 @@ test("real PostgreSQL persists immutable versions, review decisions and exact Te
       [created.testCaseId]
     );
     assert.equal(historical.rows[0]?.title, "PostgreSQL integration checkout");
+    await assert.rejects(
+      pool.query("UPDATE qa_test_case_version SET title = 'tampered' WHERE test_case_id = $1 AND version = 1", [created.testCaseId]),
+      /qa_test_case_version_is_immutable/
+    );
+    await assert.rejects(
+      pool.query("DELETE FROM qa_test_case_version WHERE test_case_id = $1 AND version = 1", [created.testCaseId]),
+      /qa_test_case_version_is_immutable/
+    );
     assert.equal((await runs.get(runId))?.testCaseVersion, 1);
 
     const concurrent = await cases.create({
