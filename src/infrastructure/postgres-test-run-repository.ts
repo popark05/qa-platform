@@ -26,6 +26,33 @@ const mapEvidence = (row: EvidenceRow): EvidenceReference => ({
 export class PostgresTestRunRepository implements TestRunRepository {
   constructor(private readonly pool: Pool) {}
 
+  async heartbeat(runId: string, at: string): Promise<void> {
+    const result = await this.pool.query(
+      "UPDATE qa_test_run SET last_heartbeat_at = $2 WHERE run_id = $1 AND status = 'running'",
+      [runId, at]
+    );
+    if (result.rowCount !== 1) throw new Error("test_run_not_running");
+  }
+
+  async recoverStaleRuns(staleBefore: string, finishedAt: string): Promise<string[]> {
+    const result = await this.pool.query<{ run_id: string }>(
+      `WITH stale AS (
+         SELECT run_id FROM qa_test_run
+         WHERE status = 'running' AND last_heartbeat_at < $1
+         ORDER BY last_heartbeat_at
+         FOR UPDATE SKIP LOCKED
+         LIMIT 100
+       )
+       UPDATE qa_test_run AS run
+       SET status = 'abandoned', finished_at = $2
+       FROM stale
+       WHERE run.run_id = stale.run_id AND run.status = 'running'
+       RETURNING run.run_id`,
+      [staleBefore, finishedAt]
+    );
+    return result.rows.map((row) => row.run_id);
+  }
+
   async create(input: NewTestRun): Promise<TestRun> {
     await this.pool.query(
       `INSERT INTO qa_test_run (run_id, test_case_id, test_case_version, platform, target_id, status, started_at)
@@ -49,6 +76,7 @@ export class PostgresTestRunRepository implements TestRunRepository {
       for (const reference of result.evidenceRefs ?? []) {
         await this.insertEvidence(client, runId, result.stepId, reference);
       }
+      await client.query("UPDATE qa_test_run SET last_heartbeat_at = now() WHERE run_id = $1 AND status = 'running'", [runId]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
