@@ -16,8 +16,15 @@ The normalized step-level reference is defined by `contracts/reverse-screen-evid
 
 A consumer that needs binary access must request a fresh download URL from Reverse Screen's `GET /v1/evidence-artifacts/{evidenceId}/download-url` endpoint. QA Platform never stores that temporary URL.
 
-## Current boundaries
+## Persistence
 
-- Test Run and Step Result persistence is currently in-memory, so attached references are lost on process restart.
-- Authentication, service-to-service authorization and tenant ownership checks are not implemented.
-- Evidence resolution requires `REVERSE_SCREEN_BASE_URL`; there is no direct database integration.
+- When `DATABASE_URL` is configured, `TestRunService` uses `PostgresTestRunRepository`. Test Runs, Step Results, heartbeats, and step-level Evidence references are persisted in PostgreSQL.
+- Run the database migrations with `npm run migrate` before starting the service. The server also uses PostgreSQL-backed Test Case persistence when the database is configured.
+- Without `DATABASE_URL`, the service falls back to in-memory repositories. Data, including Evidence references, is then lost on process restart.
+- The PostgreSQL repository scopes reads and writes by `tenant_id`; the API tenant identity is derived from the authenticated request context.
+
+## Current limitations
+
+- The Reverse Screen metadata client currently sends no service credential. Service-to-service authentication and authorization at the Reverse Screen boundary still need to be implemented.
+- The client validates metadata shape and stable `s3://` storage URI, but does not fetch or independently checksum the binary object.
+- Presigned download URLs are intentionally generated on demand by Reverse Screen rather than stored in QA Platform.
