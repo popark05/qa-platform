@@ -75,10 +75,12 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
+          # Each script line runs in its own shell, so the device lookup and its uses share one line.
+          # Mobilewright identifies emulators by its own device ID, which may differ from the adb serial.
           script: |
             adb install e2e-fixtures/android/app/build/outputs/apk/debug/app-debug.apk
-            npx mobilewright install --device emulator-5554
-            QA_MOBILE_PLATFORM=android QA_MOBILE_DEVICE_ID=emulator-5554 QA_MOBILE_BUNDLE_ID=com.popark05.qafixture node --import tsx scripts/mobilewright-smoke.mjs
+            npx mobilewright devices
+            DEVICE_ID="$(npx mobilewright devices | awk '/ android / && / emulator / {print $1; exit}')"; DEVICE_ID="${DEVICE_ID:-emulator-5554}"; echo "Mobilewright device: $DEVICE_ID" && npx mobilewright install --device "$DEVICE_ID" && QA_MOBILE_PLATFORM=android QA_MOBILE_DEVICE_ID="$DEVICE_ID" QA_MOBILE_BUNDLE_ID=com.popark05.qafixture node --import tsx scripts/mobilewright-smoke.mjs
 
   ios-simulator:
     name: iOS simulator native E2E
