@@ -15,10 +15,10 @@ struct FixtureScreen: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            Button("Continue") {
+            Button(submitted ? "Welcome" : "Continue") {
                 submitted = true
             }
-            .accessibilityLabel("Continue")
+            .accessibilityLabel(submitted ? "Welcome" : "Continue")
             .accessibilityIdentifier("continueButton")
 
             TextField("Email", text: $email)
@@ -31,7 +31,7 @@ struct FixtureScreen: View {
             if submitted {
                 Text("Welcome")
                     .font(.title)
-                    .accessibilityLabel("Welcome")
+                    .accessibilityLabel("Welcome message")
                     .accessibilityIdentifier("welcomeMessage")
             }
             Spacer()

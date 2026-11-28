@@ -35,14 +35,18 @@ public final class MainActivity extends Activity {
 
     TextView welcome = new TextView(this);
     welcome.setText("Welcome");
-    welcome.setContentDescription("Welcome");
+    welcome.setContentDescription("Welcome message");
     welcome.setTextSize(24);
     welcome.setVisibility(View.GONE);
     welcome.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
     layout.addView(welcome, new LinearLayout.LayoutParams(
       LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-    continueButton.setOnClickListener(view -> welcome.setVisibility(View.VISIBLE));
+    continueButton.setOnClickListener(view -> {
+      continueButton.setText("Welcome");
+      continueButton.setContentDescription("Welcome");
+      welcome.setVisibility(View.VISIBLE);
+    });
     setContentView(layout);
   }
 }

@@ -26,9 +26,9 @@ try {
   const tree = await device.screen.viewTree();
   process.stdout.write("ACCESSIBILITY_TREE_AFTER_CONTINUE " + JSON.stringify(tree) + "\n");
 
-  const welcome = device.screen.getByText("Welcome");
-  await welcome.waitFor({ state: "visible", timeout: 10_000 });
-  assert.match(await welcome.getText(), /Welcome/);
+  const completedButton = device.screen.getByRole("button", { name: "Welcome" });
+  await completedButton.waitFor({ state: "visible", timeout: 10_000 });
+  assert.match(await completedButton.getText(), /Welcome/);
   process.stdout.write(platform + " Mobilewright native smoke test passed\n");
 } finally {
   await device.close();
