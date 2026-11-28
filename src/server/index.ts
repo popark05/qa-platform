@@ -23,8 +23,12 @@ let recoveryTimer: ReturnType<typeof setInterval> | undefined;
 const testCaseRepository = pool ? new PostgresTestCaseRepository(pool) : new InMemoryTestCaseRepository();
 const createRunService = (executor?: ConstructorParameters<typeof TestRunService>[0]) =>
   new TestRunService(executor, runRepository);
+if (process.env.REVERSE_SCREEN_BASE_URL && !process.env.REVERSE_SCREEN_SERVICE_TOKEN) {
+  // Reverse Screen rejects unauthenticated evidence reads, so fail at startup instead of on every attachment.
+  throw new Error("REVERSE_SCREEN_SERVICE_TOKEN is required when REVERSE_SCREEN_BASE_URL is set");
+}
 const evidenceResolver = process.env.REVERSE_SCREEN_BASE_URL
-  ? new ReverseScreenEvidenceClient(process.env.REVERSE_SCREEN_BASE_URL)
+  ? new ReverseScreenEvidenceClient(process.env.REVERSE_SCREEN_BASE_URL, { serviceToken: process.env.REVERSE_SCREEN_SERVICE_TOKEN! })
   : undefined;
 const evidenceOptions = evidenceResolver ? { evidenceResolver } : {};
 const authMode = process.env.QA_AUTH_REQUIRED === "true" || process.env.NODE_ENV === "production" ? "required" : "disabled";

@@ -13,25 +13,41 @@ interface ReverseScreenEvidencePayload {
   captured_at?: unknown;
 }
 
+export interface ReverseScreenEvidenceClientOptions {
+  /** Shared service token matching Reverse Screen's REVERSE_SCREEN_QA_SERVICE_TOKEN (at least 32 bytes). */
+  serviceToken: string;
+  fetcher?: typeof fetch;
+}
+
 export class ReverseScreenEvidenceClient implements EvidenceResolver {
   private readonly baseUrl: URL;
-  constructor(baseUrl: string, private readonly fetcher: typeof fetch = fetch) {
+  private readonly serviceToken: string;
+  private readonly fetcher: typeof fetch;
+  constructor(baseUrl: string, options: ReverseScreenEvidenceClientOptions) {
     this.baseUrl = new URL(baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
     if (this.baseUrl.protocol !== "http:" && this.baseUrl.protocol !== "https:") {
       throw new Error("REVERSE_SCREEN_BASE_URL must use http or https");
     }
+    if (Buffer.byteLength(options.serviceToken) < 32) {
+      throw new Error("REVERSE_SCREEN_SERVICE_TOKEN must contain at least 32 bytes");
+    }
+    this.serviceToken = options.serviceToken;
+    this.fetcher = options.fetcher ?? fetch;
   }
 
   async resolve(evidenceId: string): Promise<EvidenceReference> {
     let response: Response;
     try {
       response = await this.fetcher(new URL(`v1/evidence-artifacts/${encodeURIComponent(evidenceId)}`, this.baseUrl), {
-        headers: { accept: "application/json" }
+        headers: { accept: "application/json", authorization: `Bearer ${this.serviceToken}` }
       });
     } catch {
       throw new EvidenceSourceUnavailableError("reverse_screen_request_failed");
     }
     if (response.status === 404) throw new EvidenceNotFoundError(evidenceId);
+    if (response.status === 401 || response.status === 403) {
+      throw new EvidenceSourceUnavailableError("reverse_screen_service_auth_rejected");
+    }
     if (!response.ok) throw new EvidenceSourceUnavailableError(`reverse_screen_http_${response.status}`);
 
     let payload: ReverseScreenEvidencePayload;

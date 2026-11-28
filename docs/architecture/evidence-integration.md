@@ -9,7 +9,7 @@ The normalized step-level reference is defined by `contracts/reverse-screen-evid
 ## Resolution and attachment
 
 1. QA Platform receives `POST /v1/test-runs/{runId}/steps/{stepId}/evidence` with an `evidenceId`.
-2. Its `ReverseScreenEvidenceClient` calls `GET {REVERSE_SCREEN_BASE_URL}/v1/evidence-artifacts/{evidenceId}`.
+2. Its `ReverseScreenEvidenceClient` calls `GET {REVERSE_SCREEN_BASE_URL}/v1/evidence-artifacts/{evidenceId}` with `Authorization: Bearer {REVERSE_SCREEN_SERVICE_TOKEN}`. Reverse Screen verifies it against `REVERSE_SCREEN_QA_SERVICE_TOKEN`.
 3. QA Platform validates the returned metadata and maps it to contract v1.0.
 4. `TestRunService` attaches the reference to the selected Step Result, deduplicated by `sourceSystem + evidenceId`.
 5. The reference is returned with `GET /v1/test-runs/{runId}`.
@@ -19,5 +19,5 @@ A consumer that needs binary access must request a fresh download URL from Rever
 ## Current boundaries
 
 - Test Run and Step Result persistence is currently in-memory, so attached references are lost on process restart.
-- Authentication, service-to-service authorization and tenant ownership checks are not implemented.
+- Service-to-service authentication uses one shared bearer token; per-tenant ownership of evidence is not checked by Reverse Screen.
 - Evidence resolution requires `REVERSE_SCREEN_BASE_URL`; there is no direct database integration.

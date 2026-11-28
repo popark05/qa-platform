@@ -102,11 +102,15 @@ Free-form test step `instruction` is descriptive only. Real execution requires a
 
 ## Reverse Screen evidence integration
 
-Configure `REVERSE_SCREEN_BASE_URL` to enable step-level evidence references:
+Configure `REVERSE_SCREEN_BASE_URL` and `REVERSE_SCREEN_SERVICE_TOKEN` to enable step-level evidence references. The token must equal Reverse Screen's `REVERSE_SCREEN_QA_SERVICE_TOKEN` (at least 32 bytes); it is sent as `Authorization: Bearer <token>` on every evidence read. The server refuses to start when the base URL is set without a token.
 
 ```bash
-REVERSE_SCREEN_BASE_URL=http://localhost:3000 npm start
+REVERSE_SCREEN_BASE_URL=http://localhost:3000 \
+REVERSE_SCREEN_SERVICE_TOKEN=<same value as Reverse Screen REVERSE_SCREEN_QA_SERVICE_TOKEN> \
+npm start
 ```
+
+If Reverse Screen rejects the token, attachment returns `502 evidence_source_unavailable` and the server logs `reverse_screen_service_auth_rejected`.
 
 After a Test Run is created, attach an evidence artifact owned by Reverse Screen:
 
