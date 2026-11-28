@@ -60,3 +60,18 @@ test("invalid test case payload is rejected", async () => {
   assert.equal(response.statusCode, 400);
   await app.close();
 });
+
+test("rejects unknown fields instead of silently dropping them", async () => {
+  const app = buildApp();
+  const response = await app.inject({
+    method: "POST", url: "/v1/test-cases",
+    payload: { title: "Login", source: "manual", steps: [{ instruction: "Open login" }], flowRef: { flowId: "forged" } }
+  });
+  assert.equal(response.statusCode, 400);
+  const stepTypo = await app.inject({
+    method: "POST", url: "/v1/test-cases",
+    payload: { title: "Login", source: "manual", steps: [{ instruction: "Open login", expected: "typo" }] }
+  });
+  assert.equal(stepTypo.statusCode, 400);
+  await app.close();
+});

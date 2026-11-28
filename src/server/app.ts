@@ -84,7 +84,12 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   if (authConfig.mode === "required" && (!authConfig.secret || Buffer.byteLength(authConfig.secret) < 32)) {
     throw new Error("QA_AUTH_JWT_SECRET must be at least 32 bytes when authentication is required");
   }
-  const app = Fastify({ logger: true });
+  const app = Fastify({
+    logger: true,
+    // Fastify strips properties not allowed by `additionalProperties: false` by default; reject them instead
+    // so typos and unsupported fields surface as 400 rather than being silently dropped.
+    ajv: { customOptions: { removeAdditional: false } }
+  });
   app.decorateRequest("auth", null);
   app.addHook("preHandler", async (request, reply) => {
     if (request.url === "/health") return;
