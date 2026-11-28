@@ -4,13 +4,14 @@ import {
 } from "../domain/flow-reference.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ORIGINS = ["product_requirement", "ai_suggestion", "open_question"];
+const ORIGINS = ["product_requirement", "ai_suggestion", "open_question", "discovered"];
+const CONTRACT_VERSIONS = ["1.0", "1.1"];
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const isText = (value: unknown, max: number) => typeof value === "string" && value.length > 0 && value.length <= max;
 
-/** Structural check of the fields QA Platform relies on from flow-model v1. */
+/** Structural check of the fields QA Platform relies on from flow-model v1.0/v1.1. */
 function isFlowModelV1(value: unknown, flowId: string): value is WireflowFlowModelV1 {
-  if (!isRecord(value) || value.contractVersion !== "1.0" || value.sourceSystem !== "wireflow-review") return false;
+  if (!isRecord(value) || !CONTRACT_VERSIONS.includes(String(value.contractVersion)) || value.sourceSystem !== "wireflow-review") return false;
   if (value.flowId !== flowId || !Number.isInteger(value.flowVersion) || (value.flowVersion as number) < 1) return false;
   if (!isText(value.applicationId, 200) || !isText(value.title, 240)) return false;
   const approval = value.approval;

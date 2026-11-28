@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { NewTestCase, NewTestCaseVersion, TestCaseRepository } from "./test-case-repository.js";
 import type { FlowReference, StepFlowReference } from "./flow-reference.js";
 
-export type AuthoringSource = "manual" | "ai";
+/** manual: written by a person; ai: AI-generated (starts pending review); flow: generated from an approved Wireflow Review flow. */
+export type AuthoringSource = "manual" | "ai" | "flow";
 export type TestCaseStatus = "draft" | "pending_review" | "approved" | "rejected";
 
 export interface TestStep {

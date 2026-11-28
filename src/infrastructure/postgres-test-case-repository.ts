@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
-import type { ReviewRecord, TestCase, TestCaseStatus, TestStep } from "../domain/test-case.js";
+import type { AuthoringSource, ReviewRecord, TestCase, TestCaseStatus, TestStep } from "../domain/test-case.js";
 import type { NewTestCase, NewTestCaseVersion, TestCaseRepository } from "../domain/test-case-repository.js";
 import type { FlowReference } from "../domain/flow-reference.js";
 
 interface CaseRow {
-  test_case_id: string; tenant_id: string; current_version: number; source: "manual" | "ai"; status: TestCaseStatus;
+  test_case_id: string; tenant_id: string; current_version: number; source: AuthoringSource; status: TestCaseStatus;
   created_at: Date | string; updated_at: Date | string; flow_ref: FlowReference | string | null;
   version: number; title: string; description: string | null; steps: TestStep[] | string;
-  version_source: "manual" | "ai"; version_created_at: Date | string;
+  version_source: AuthoringSource; version_created_at: Date | string;
 }
 interface ReviewRow {
   review_id: string; test_case_id: string; version: number; reviewer_id: string;
@@ -136,7 +136,7 @@ export class PostgresTestCaseRepository implements TestCaseRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const locked = await client.query<{ current_version: number; status: TestCaseStatus; source: "manual" | "ai" }>(
+      const locked = await client.query<{ current_version: number; status: TestCaseStatus; source: AuthoringSource }>(
         "SELECT current_version, status, source FROM qa_test_case WHERE test_case_id = $1 AND tenant_id = $2 FOR UPDATE", [testCaseId, tenantId]
       );
       const row = locked.rows[0];

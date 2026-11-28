@@ -40,6 +40,22 @@ test("real PostgreSQL enforces immutable versions, run recovery and tenant isola
     assert.equal((await cases.get(created.testCaseId, otherTenantId)), undefined);
     assert.deepEqual(await cases.list(otherTenantId), []);
 
+    // Migration 007 replaced the source CHECK constraints so flow-generated cases persist.
+    const generated = await cases.create({
+      tenantId, title: "PostgreSQL integration flow case", source: "flow",
+      steps: [{ stepId: "edge-e1", instruction: 'On "Home", tap "Search"', flowRef: { edgeId: "e1" } }],
+      flowRef: {
+        sourceSystem: "wireflow-review", contractVersion: "1.1", flowId: randomUUID(), flowVersion: 1,
+        applicationId: "demo", approvalReviewId: randomUUID()
+      }
+    });
+    assert.equal(generated.status, "draft");
+    assert.equal((await cases.get(generated.testCaseId, tenantId))?.source, "flow");
+    await assert.rejects(
+      pool.query("UPDATE qa_test_case SET source = 'imported' WHERE test_case_id = $1", [generated.testCaseId]),
+      /qa_test_case_source_check/
+    );
+
     const next = await cases.createVersion(created.testCaseId, tenantId, {
       expectedVersion: 1, title: "PostgreSQL integration checkout revised",
       steps: [

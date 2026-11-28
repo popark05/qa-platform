@@ -151,7 +151,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     }
     const testCase = await testCases.create({
       tenantId, title: generated.title, description: generated.description,
-      source: "manual", steps: generated.steps, flowRef: generated.flowRef
+      source: "flow", steps: generated.steps, flowRef: generated.flowRef
     });
     return reply.code(201).send({ testCase, created: true, skippedEdges: generated.skippedEdges });
   });

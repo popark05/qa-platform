@@ -1,10 +1,12 @@
 import type { TestStep } from "./test-case.js";
 
-type Origin = "product_requirement" | "ai_suggestion" | "open_question";
+/** discovered (contract 1.1): observed in the running app by Reverse Screen and accepted in review. */
+type Origin = "product_requirement" | "ai_suggestion" | "open_question" | "discovered";
+export type FlowContractVersion = "1.0" | "1.1";
 
-/** Wireflow Review flow-model v1 (wireflow-review/contracts/flow-model.v1.schema.json). Only approved flows are published. */
+/** Wireflow Review flow-model v1.x (wireflow-review/contracts/flow-model.v1.schema.json). Only approved flows are published. */
 export interface WireflowFlowModelV1 {
-  contractVersion: "1.0";
+  contractVersion: FlowContractVersion;
   sourceSystem: "wireflow-review";
   flowId: string;
   flowVersion: number;
@@ -25,7 +27,7 @@ export interface WireflowFlowModelV1 {
 /** Case-level provenance: the exact approved flow snapshot a Test Case was generated from. */
 export interface FlowReference {
   sourceSystem: "wireflow-review";
-  contractVersion: "1.0";
+  contractVersion: FlowContractVersion;
   flowId: string;
   flowVersion: number;
   applicationId: string;
@@ -115,7 +117,7 @@ export function generateTestCaseFromFlow(flow: WireflowFlowModelV1): GeneratedFl
       (skippedEdges.length ? `; ${skippedEdges.length} open-question edge(s) skipped.` : "."), 4000),
     steps,
     flowRef: {
-      sourceSystem: "wireflow-review", contractVersion: "1.0", flowId: flow.flowId,
+      sourceSystem: "wireflow-review", contractVersion: flow.contractVersion, flowId: flow.flowId,
       flowVersion: flow.flowVersion, applicationId: flow.applicationId, approvalReviewId: flow.approval.reviewId
     },
     skippedEdges
