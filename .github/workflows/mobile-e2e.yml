@@ -64,6 +64,7 @@ jobs:
           profile: pixel_2
           script: |
             adb install e2e-fixtures/android/app/build/outputs/apk/debug/app-debug.apk
+            npx mobilewright install --device emulator-5554
             QA_MOBILE_PLATFORM=android QA_MOBILE_DEVICE_ID=emulator-5554 QA_MOBILE_BUNDLE_ID=com.popark05.qafixture node scripts/mobilewright-smoke.mjs
 
   ios-simulator:
@@ -97,6 +98,10 @@ jobs:
           xcrun simctl bootstatus "$DEVICE_ID" -b
           xcrun simctl install "$DEVICE_ID" "$RUNNER_TEMP/qa-derived/Build/Products/Debug-iphonesimulator/QAFixture.app"
           xcrun simctl launch "$DEVICE_ID" com.popark05.qafixture
+      - name: Install Mobilewright device agent
+        env:
+          QA_MOBILE_DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
+        run: npx mobilewright install --device "$QA_MOBILE_DEVICE_ID"
       - name: Run Mobilewright against iOS simulator
         env:
           QA_MOBILE_PLATFORM: ios
