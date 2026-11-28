@@ -18,11 +18,15 @@ try {
   await email.waitFor({ state: "visible", timeout: 15_000 });
   await email.fill("qa@example.test");
 
-  const continueButton = device.screen.getByLabel("Continue");
+  const continueButton = device.screen.getByRole("button", { name: "Continue" });
   await continueButton.waitFor({ state: "visible", timeout: 10_000 });
   await continueButton.tap();
 
-  const welcome = device.screen.getByLabel("Welcome");
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  const tree = await device.screen.viewTree();
+  process.stdout.write("ACCESSIBILITY_TREE_AFTER_CONTINUE " + JSON.stringify(tree) + "\n");
+
+  const welcome = device.screen.getByText("Welcome");
   await welcome.waitFor({ state: "visible", timeout: 10_000 });
   assert.match(await welcome.getText(), /Welcome/);
   process.stdout.write(platform + " Mobilewright native smoke test passed\n");
