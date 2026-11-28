@@ -30,7 +30,8 @@ test("protected API rejects missing, malformed, expired and tampered bearer toke
   const expired = issueToken({ sub: "expired", tenantId: tenantA, roles: ["viewer"], exp: 1 });
   assert.equal((await app.inject({ method: "GET", url: "/v1/test-cases", headers: bearer(expired) })).statusCode, 401);
   const valid = issueToken({ sub: "viewer-1", tenantId: tenantA, roles: ["viewer"] });
-  const tampered = valid.slice(0, -1) + (valid.endsWith("a") ? "b" : "a");
+  const [header, payload, signature] = valid.split(".");
+  const tampered = header + "." + payload + "." + (signature![0] === "A" ? "B" : "A") + signature!.slice(1);
   assert.equal((await app.inject({ method: "GET", url: "/v1/test-cases", headers: bearer(tampered) })).statusCode, 401);
   await app.close();
 });
