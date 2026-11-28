@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { ReverseScreenEvidenceClient } from "../src/adapters/reverse-screen-evidence-client.js";
 import { EvidenceNotFoundError, type EvidenceReference, type EvidenceResolver } from "../src/domain/evidence-reference.js";
 import { buildApp } from "../src/server/app.js";
 
 const evidenceId = "e0e0e0e0-1111-4111-8111-e0e0e0e0e0e0";
+const binary = Buffer.from("verified reverse screen evidence");
+const binarySha256 = createHash("sha256").update(binary).digest("hex");
 const reference: EvidenceReference = {
   contractVersion: "1.0", sourceSystem: "reverse-screen", evidenceId,
-  kind: "screenshot", contentType: "image/png", byteSize: 1024,
-  sha256: "ab".repeat(32), storageUri: "s3://reverse-screen/evidence/session/evidence",
+  kind: "screenshot", contentType: "image/png", byteSize: binary.byteLength,
+  sha256: binarySha256, storageUri: "s3://reverse-screen/evidence/session/evidence",
   capturedAt: "2026-11-27T00:00:00.000Z"
 };
 
@@ -31,19 +34,61 @@ async function createApprovedRun(app: ReturnType<typeof buildApp>): Promise<{ ru
 }
 
 test("Reverse Screen evidence metadata is mapped to versioned QA evidence reference", async () => {
-  let requestedUrl = "";
-  const client = new ReverseScreenEvidenceClient("http://reverse-screen:3000", async (input) => {
-    requestedUrl = String(input);
+  const requestedUrls: string[] = [];
+  const requestedAuthorizations: Array<string | null> = [];
+  const client = new ReverseScreenEvidenceClient("http://reverse-screen:3000", "service-secret-012345678901234567890123", async (input, init) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    requestedAuthorizations.push(new Headers(init?.headers).get("authorization"));
+    if (url.endsWith("/download-url")) {
+      return new Response(JSON.stringify({ evidence_id: evidenceId, download_url: "https://storage.example.test/signed" }), { status: 200 });
+    }
+    if (url === "https://storage.example.test/signed") {
+      return new Response(binary, { status: 200, headers: { "content-type": "image/png", "content-length": String(binary.byteLength) } });
+    }
     return new Response(JSON.stringify({
       evidence_id: evidenceId, kind: "screenshot", content_type: "image/png",
-      byte_size: 1024, sha256: "ab".repeat(32),
+      byte_size: binary.byteLength, sha256: binarySha256,
       storage_uri: "s3://reverse-screen/evidence/session/evidence",
       captured_at: "2026-11-27T00:00:00.000Z"
     }), { status: 200, headers: { "content-type": "application/json" } });
   });
   const resolved = await client.resolve(evidenceId);
-  assert.equal(requestedUrl, `http://reverse-screen:3000/v1/evidence-artifacts/${evidenceId}`);
+  assert.deepEqual(requestedUrls, [
+    `http://reverse-screen:3000/v1/evidence-artifacts/${evidenceId}`,
+    `http://reverse-screen:3000/v1/evidence-artifacts/${evidenceId}/download-url`,
+    "https://storage.example.test/signed"
+  ]);
+  assert.deepEqual(requestedAuthorizations, [
+    "Bearer service-secret-012345678901234567890123",
+    "Bearer service-secret-012345678901234567890123",
+    null
+  ]);
   assert.deepEqual(resolved, reference);
+});
+
+test("Reverse Screen evidence client verifies downloaded binary size and checksum", async () => {
+  const client = new ReverseScreenEvidenceClient("http://reverse-screen:3000", "service-secret-012345678901234567890123", async (input) => {
+    const url = String(input);
+    if (url.endsWith("/download-url")) return new Response(JSON.stringify({ evidence_id: evidenceId, download_url: "https://storage.example.test/signed" }), { status: 200 });
+    if (url === "https://storage.example.test/signed") {
+      const tampered = Buffer.from(binary); tampered[0] = tampered[0]! ^ 0xff;
+      return new Response(tampered, { status: 200, headers: { "content-type": "image/png", "content-length": String(tampered.byteLength) } });
+    }
+    return new Response(JSON.stringify({
+      evidence_id: evidenceId, kind: "screenshot", content_type: "image/png",
+      byte_size: binary.byteLength, sha256: binarySha256,
+      storage_uri: "s3://reverse-screen/evidence/session/evidence", captured_at: reference.capturedAt
+    }), { status: 200 });
+  });
+  await assert.rejects(() => client.resolve(evidenceId), /reverse_screen_binary_checksum_mismatch/);
+});
+
+test("Reverse Screen evidence client requires a high-entropy service token", () => {
+  assert.throws(
+    () => new ReverseScreenEvidenceClient("http://reverse-screen:3000", "short"),
+    /REVERSE_SCREEN_SERVICE_TOKEN/
+  );
 });
 
 test("test run step can attach a Reverse Screen evidence reference and deduplicate it", async () => {

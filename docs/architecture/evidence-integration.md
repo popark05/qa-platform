@@ -9,10 +9,11 @@ The normalized step-level reference is defined by `contracts/reverse-screen-evid
 ## Resolution and attachment
 
 1. QA Platform receives `POST /v1/test-runs/{runId}/steps/{stepId}/evidence` with an `evidenceId`.
-2. Its `ReverseScreenEvidenceClient` calls `GET {REVERSE_SCREEN_BASE_URL}/v1/evidence-artifacts/{evidenceId}`.
+2. Its `ReverseScreenEvidenceClient` calls `GET {REVERSE_SCREEN_BASE_URL}/v1/evidence-artifacts/{evidenceId}` with `Authorization: Bearer <REVERSE_SCREEN_SERVICE_TOKEN>`.
 3. QA Platform validates the returned metadata and maps it to contract v1.0.
-4. `TestRunService` attaches the reference to the selected Step Result, deduplicated by `sourceSystem + evidenceId`.
-5. The reference is returned with `GET /v1/test-runs/{runId}`.
+4. It requests a fresh signed download URL with the service token, downloads the binary without forwarding the token, and checks content type, byte size, a 20 MiB maximum, and SHA-256.
+5. `TestRunService` attaches the reference to the selected Step Result, deduplicated by `sourceSystem + evidenceId`.
+6. The reference is returned with `GET /v1/test-runs/{runId}`.
 
 A consumer that needs binary access must request a fresh download URL from Reverse Screen's `GET /v1/evidence-artifacts/{evidenceId}/download-url` endpoint. QA Platform never stores that temporary URL.
 
@@ -25,6 +26,6 @@ A consumer that needs binary access must request a fresh download URL from Rever
 
 ## Current limitations
 
-- The Reverse Screen metadata client currently sends no service credential. Service-to-service authentication and authorization at the Reverse Screen boundary still need to be implemented.
-- The client validates metadata shape and stable `s3://` storage URI, but does not fetch or independently checksum the binary object.
+- The metadata client requires a high-entropy shared service token of at least 32 bytes. Reverse Screen must be configured with the same token to authorize metadata and download-URL requests; those endpoints fail closed when verification is not configured. Keep the token in deployment secret storage and rotate it in both services together.
+- The client buffers only bounded chunks while verifying the binary; it does not persist evidence bytes or signed download URLs. The current maximum is 20 MiB per evidence item.
 - Presigned download URLs are intentionally generated on demand by Reverse Screen rather than stored in QA Platform.
