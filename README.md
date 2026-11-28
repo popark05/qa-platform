@@ -123,6 +123,16 @@ The contract is defined in [reverse-screen-evidence-reference.v1.schema.json](co
 
 See [evidence integration architecture](docs/architecture/evidence-integration.md) for the request flow and current boundaries.
 
+### Native Mobilewright E2E validation
+
+The `Mobilewright Native E2E` workflow builds small native fixture apps and drives them on real Android and iOS simulator runtimes. It does not substitute a browser/WebView test for native coverage.
+
+- Android: builds a debug APK with Gradle, installs it on an API 35 Android emulator, and exercises the Email field, Continue button, and Welcome result.
+- iOS: builds a SwiftUI simulator app with Xcode, installs it on an iPhone simulator, and runs the same semantic interaction sequence.
+- Both jobs call `npx mobilewright doctor` and run `scripts/mobilewright-smoke.mjs` through the Mobilewright Android/iOS launch APIs.
+
+The workflow runs on pushes and pull requests that change the Mobilewright adapter, fixtures, smoke script, or package dependencies, and can also be started manually. It validates simulator/emulator integration; physical-device certification still requires a connected device lab and platform signing/provisioning.
+
 ## Repository boundaries
 - [Wireflow Review](https://github.com/popark05/wireflow-review) owns planning-time flow review.
 - [Reverse Screen](https://github.com/popark05/reverse-screen) owns runtime discovery and screen/flow models.

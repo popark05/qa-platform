@@ -1,0 +1,99 @@
+name: Mobilewright Native E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/adapters/mobilewright-**"
+      - "e2e-fixtures/**"
+      - "scripts/mobilewright-smoke.mjs"
+      - ".github/workflows/mobile-e2e.yml"
+      - "package.json"
+      - "package-lock.json"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/adapters/mobilewright-**"
+      - "e2e-fixtures/**"
+      - "scripts/mobilewright-smoke.mjs"
+      - ".github/workflows/mobile-e2e.yml"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+jobs:
+  android-emulator:
+    name: Android emulator native E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools, platforms;android-35, build-tools;35.0.0"
+      - name: Install Node dependencies
+        run: npm install
+      - name: Build native Android fixture APK
+        shell: bash
+        run: |
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o "$RUNNER_TEMP/gradle.zip"
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/gradle-8.7/bin/gradle" -p e2e-fixtures/android --no-daemon assembleDebug
+      - name: Run Mobilewright against Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            npx mobilewright doctor
+            adb install e2e-fixtures/android/app/build/outputs/apk/debug/app-debug.apk
+            QA_MOBILE_PLATFORM=android QA_MOBILE_DEVICE_ID=emulator-5554 QA_MOBILE_BUNDLE_ID=com.popark05.qafixture node scripts/mobilewright-smoke.mjs
+
+  ios-simulator:
+    name: iOS simulator native E2E
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Node dependencies
+        run: npm install
+      - name: Build native iOS fixture app
+        run: |
+          xcodebuild \
+            -project e2e-fixtures/ios/QAFixture.xcodeproj \
+            -scheme QAFixture \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/qa-derived" \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Boot simulator and install fixture
+        id: simulator
+        shell: bash
+        run: |
+          DEVICE_ID="$(xcrun simctl list devices available -j | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);const all=Object.values(j.devices).flat();const d=all.find(x=>x.isAvailable && x.name.includes("iPhone"));if(!d)process.exit(1);process.stdout.write(d.udid);});')"
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcrun simctl install "$DEVICE_ID" "$RUNNER_TEMP/qa-derived/Build/Products/Debug-iphonesimulator/QAFixture.app"
+          xcrun simctl launch "$DEVICE_ID" com.popark05.qafixture
+      - name: Run Mobilewright against iOS simulator
+        env:
+          QA_MOBILE_PLATFORM: ios
+          QA_MOBILE_DEVICE_ID: ${{ steps.simulator.outputs.device_id }}
+          QA_MOBILE_BUNDLE_ID: com.popark05.qafixture
+        run: |
+          npx mobilewright doctor
+          node scripts/mobilewright-smoke.mjs
