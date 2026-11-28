@@ -20,6 +20,8 @@ public final class MainActivity extends Activity {
     layout.setPadding(padding, padding, padding, padding);
 
     Button continueButton = new Button(this);
+    // Material buttons render text in caps; keep the reported text equal to the label under test.
+    continueButton.setAllCaps(false);
     continueButton.setText("Continue");
     continueButton.setContentDescription("Continue");
     layout.addView(continueButton, new LinearLayout.LayoutParams(
