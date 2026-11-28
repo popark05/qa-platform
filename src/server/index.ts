@@ -27,6 +27,24 @@ const evidenceResolver = process.env.REVERSE_SCREEN_BASE_URL
   ? new ReverseScreenEvidenceClient(process.env.REVERSE_SCREEN_BASE_URL)
   : undefined;
 const evidenceOptions = evidenceResolver ? { evidenceResolver } : {};
+const authMode = process.env.QA_AUTH_REQUIRED === "true" || process.env.NODE_ENV === "production" ? "required" : "disabled";
+const authSecret = process.env.QA_AUTH_JWT_SECRET;
+if (authMode === "required" && (!authSecret || Buffer.byteLength(authSecret) < 32)) {
+  await pool?.end();
+  throw new Error("QA_AUTH_JWT_SECRET must be configured with at least 32 bytes");
+}
+if (process.env.NODE_ENV === "production" && (!process.env.QA_AUTH_ISSUER || !process.env.QA_AUTH_AUDIENCE)) {
+  await pool?.end();
+  throw new Error("QA_AUTH_ISSUER and QA_AUTH_AUDIENCE are required in production");
+}
+const authOptions = {
+  auth: {
+    mode: authMode as "required" | "disabled",
+    ...(authSecret ? { secret: authSecret } : {}),
+    ...(process.env.QA_AUTH_ISSUER ? { issuer: process.env.QA_AUTH_ISSUER } : {}),
+    ...(process.env.QA_AUTH_AUDIENCE ? { audience: process.env.QA_AUTH_AUDIENCE } : {})
+  }
+};
 const closeResources = async (closeAdapter?: () => Promise<void>) => {
   if (recoveryTimer) clearInterval(recoveryTimer);
   try { await closeAdapter?.(); }
@@ -42,7 +60,7 @@ if (adapter === "playwright") {
   const sessions = new PlaywrightSessionManager(browserName);
   app = buildApp({
     testCases: testCaseRepository, runs: createRunService(new ManagedPlaywrightStepExecutor(sessions)),
-    ...evidenceOptions, onClose: () => closeResources(() => sessions.close())
+    ...evidenceOptions, ...authOptions, onClose: () => closeResources(() => sessions.close())
   });
 } else if (adapter === "mobilewright") {
   const bundleId = process.env.MOBILE_APP_BUNDLE_ID;
@@ -50,10 +68,10 @@ if (adapter === "playwright") {
   const sessions = new MobilewrightSessionManager(bundleId);
   app = buildApp({
     testCases: testCaseRepository, runs: createRunService(new MobilewrightStepExecutor(sessions)),
-    ...evidenceOptions, onClose: () => closeResources(() => sessions.close())
+    ...evidenceOptions, ...authOptions, onClose: () => closeResources(() => sessions.close())
   });
 } else if (adapter === "mock") {
-  app = buildApp({ testCases: testCaseRepository, runs: createRunService(), ...evidenceOptions, onClose: () => closeResources() });
+  app = buildApp({ testCases: testCaseRepository, runs: createRunService(), ...evidenceOptions, ...authOptions, onClose: () => closeResources() });
 } else {
   await pool?.end();
   throw new Error("QA_EXECUTION_ADAPTER must be mock, playwright or mobilewright");

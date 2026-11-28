@@ -3,6 +3,7 @@ import type { StepExecutionResult, TestRun, TestRunStatus } from "./test-run.js"
 
 export interface NewTestRun {
   runId: string;
+  tenantId: string;
   testCaseId: string;
   testCaseVersion: number;
   target: TestRun["target"];
@@ -12,10 +13,10 @@ export interface TestRunRepository {
   create(input: NewTestRun): Promise<TestRun>;
   heartbeat(runId: string, at: string): Promise<void>;
   recoverStaleRuns(staleBefore: string, finishedAt: string): Promise<string[]>;
-  appendStepResult(runId: string, result: StepExecutionResult, position: number): Promise<void>;
-  complete(runId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun>;
-  get(runId: string): Promise<TestRun | undefined>;
-  attachEvidence(runId: string, stepId: string, reference: EvidenceReference): Promise<TestRun | undefined>;
+  appendStepResult(runId: string, tenantId: string, result: StepExecutionResult, position: number): Promise<void>;
+  complete(runId: string, tenantId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun>;
+  get(runId: string, tenantId: string): Promise<TestRun | undefined>;
+  attachEvidence(runId: string, stepId: string, tenantId: string, reference: EvidenceReference): Promise<TestRun | undefined>;
 }
 
 export class InMemoryTestRunRepository implements TestRunRepository {
@@ -38,9 +39,9 @@ export class InMemoryTestRunRepository implements TestRunRepository {
     return [];
   }
 
-  async appendStepResult(runId: string, result: StepExecutionResult, position: number): Promise<void> {
+  async appendStepResult(runId: string, tenantId: string, result: StepExecutionResult, position: number): Promise<void> {
     const run = this.runs.get(runId);
-    if (!run || run.status !== "running") throw new Error("test_run_not_running");
+    if (!run || run.tenantId !== tenantId || run.status !== "running") throw new Error("test_run_not_running");
     if (run.stepResults.some((item) => item.stepId === result.stepId)) throw new Error("step_result_already_exists");
     run.stepResults.push(structuredClone(result));
     this.positions.get(runId)?.set(result.stepId, position);
@@ -49,22 +50,22 @@ export class InMemoryTestRunRepository implements TestRunRepository {
     );
   }
 
-  async complete(runId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun> {
+  async complete(runId: string, tenantId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun> {
     const run = this.runs.get(runId);
-    if (!run || run.status !== "running") throw new Error("test_run_not_running");
+    if (!run || run.tenantId !== tenantId || run.status !== "running") throw new Error("test_run_not_running");
     run.status = status;
     run.finishedAt = finishedAt;
     return structuredClone(run);
   }
 
-  async get(runId: string): Promise<TestRun | undefined> {
+  async get(runId: string, tenantId: string): Promise<TestRun | undefined> {
     const run = this.runs.get(runId);
-    return run ? structuredClone(run) : undefined;
+    return run?.tenantId === tenantId ? structuredClone(run) : undefined;
   }
 
-  async attachEvidence(runId: string, stepId: string, reference: EvidenceReference): Promise<TestRun | undefined> {
+  async attachEvidence(runId: string, stepId: string, tenantId: string, reference: EvidenceReference): Promise<TestRun | undefined> {
     const run = this.runs.get(runId);
-    if (!run) return undefined;
+    if (!run || run.tenantId !== tenantId) return undefined;
     const step = run.stepResults.find((item) => item.stepId === stepId);
     if (!step) return undefined;
     const refs = step.evidenceRefs ?? [];

@@ -13,6 +13,7 @@ export interface TestStep {
 
 export interface TestCase {
   testCaseId: string;
+  tenantId: string;
   version: number;
   title: string;
   description?: string;
@@ -51,23 +52,25 @@ export class InMemoryTestCaseRepository implements TestCaseRepository {
     return structuredClone(testCase);
   }
 
-  async get(testCaseId: string): Promise<TestCase | undefined> {
+  async get(testCaseId: string, tenantId: string): Promise<TestCase | undefined> {
     const item = this.current.get(testCaseId);
-    return item ? structuredClone(item) : undefined;
+    return item?.tenantId === tenantId ? structuredClone(item) : undefined;
   }
-  async list(): Promise<TestCase[]> { return [...this.current.values()].map((item) => structuredClone(item)); }
+  async list(tenantId: string): Promise<TestCase[]> {
+    return [...this.current.values()].filter((item) => item.tenantId === tenantId).map((item) => structuredClone(item));
+  }
 
-  async submitForReview(testCaseId: string, expectedVersion?: number): Promise<TestCase | undefined> {
+  async submitForReview(testCaseId: string, tenantId: string, expectedVersion?: number): Promise<TestCase | undefined> {
     const item = this.current.get(testCaseId);
-    if (!item || item.status !== "draft" || (expectedVersion !== undefined && item.version !== expectedVersion)) return undefined;
+    if (!item || item.tenantId !== tenantId || item.status !== "draft" || (expectedVersion !== undefined && item.version !== expectedVersion)) return undefined;
     const updated = { ...item, status: "pending_review" as const, updatedAt: new Date().toISOString() };
     this.current.set(testCaseId, updated);
     return structuredClone(updated);
   }
 
-  async review(testCaseId: string, reviewerId: string, decision: "approved" | "rejected", comment?: string, expectedVersion?: number): Promise<ReviewRecord | undefined> {
+  async review(testCaseId: string, tenantId: string, reviewerId: string, decision: "approved" | "rejected", comment?: string, expectedVersion?: number): Promise<ReviewRecord | undefined> {
     const item = this.current.get(testCaseId);
-    if (!item || item.status !== "pending_review" || (expectedVersion !== undefined && item.version !== expectedVersion)) return undefined;
+    if (!item || item.tenantId !== tenantId || item.status !== "pending_review" || (expectedVersion !== undefined && item.version !== expectedVersion)) return undefined;
     const review: ReviewRecord = {
       reviewId: randomUUID(), testCaseId, version: item.version, reviewerId, decision,
       ...(comment === undefined ? {} : { comment }), reviewedAt: new Date().toISOString()
@@ -77,11 +80,11 @@ export class InMemoryTestCaseRepository implements TestCaseRepository {
     return structuredClone(review);
   }
 
-  async createVersion(testCaseId: string, input: NewTestCaseVersion): Promise<TestCase | undefined> {
+  async createVersion(testCaseId: string, tenantId: string, input: NewTestCaseVersion): Promise<TestCase | undefined> {
     const item = this.current.get(testCaseId);
-    if (!item || item.status === "pending_review" || item.version !== input.expectedVersion) return undefined;
+    if (!item || item.tenantId !== tenantId || item.status === "pending_review" || item.version !== input.expectedVersion) return undefined;
     const next: TestCase = {
-      testCaseId, version: item.version + 1, title: input.title,
+      testCaseId, tenantId, version: item.version + 1, title: input.title,
       ...(input.description === undefined ? {} : { description: input.description }),
       source: item.source, status: "draft", steps: structuredClone(input.steps),
       createdAt: item.createdAt, updatedAt: new Date().toISOString()
@@ -91,7 +94,9 @@ export class InMemoryTestCaseRepository implements TestCaseRepository {
     return structuredClone(next);
   }
 
-  async listReviews(testCaseId: string): Promise<ReviewRecord[]> {
+  async listReviews(testCaseId: string, tenantId: string): Promise<ReviewRecord[]> {
+    const item = this.current.get(testCaseId);
+    if (!item || item.tenantId !== tenantId) return [];
     return structuredClone(this.reviews.get(testCaseId) ?? []);
   }
 }

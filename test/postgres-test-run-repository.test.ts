@@ -11,6 +11,8 @@ import type { Pool } from "pg";
 const migration = await readFile(new URL("../db/migrations/001_test_run.sql", import.meta.url), "utf8");
 const testCaseMigration = await readFile(new URL("../db/migrations/002_test_case_review.sql", import.meta.url), "utf8");
 const recoveryMigration = await readFile(new URL("../db/migrations/004_test_run_recovery.sql", import.meta.url), "utf8");
+const tenantMigration = await readFile(new URL("../db/migrations/005_tenant_isolation.sql", import.meta.url), "utf8");
+const tenantId = "00000000-0000-4000-8000-000000000001";
 const evidence: EvidenceReference = {
   contractVersion: "1.0", sourceSystem: "reverse-screen",
   evidenceId: "e0e0e0e0-1111-4111-8111-e0e0e0e0e0e0",
@@ -19,7 +21,7 @@ const evidence: EvidenceReference = {
   capturedAt: "2026-11-27T00:00:00.000Z"
 };
 const testCase: TestCase = {
-  testCaseId: "c0c0c0c0-1111-4111-8111-c0c0c0c0c0c0", version: 3,
+  tenantId, testCaseId: "c0c0c0c0-1111-4111-8111-c0c0c0c0c0c0", version: 3,
   title: "Checkout", source: "manual", status: "approved",
   steps: [
     { stepId: "step-open", instruction: "Open checkout" },
@@ -33,19 +35,19 @@ async function setup() {
   database.public.none(migration);
   database.public.none(testCaseMigration);
   database.public.none(recoveryMigration);
-  database.public.none(`INSERT INTO qa_test_case (test_case_id, current_version, source, status, created_at, updated_at)
-    VALUES ('c0c0c0c0-1111-4111-8111-c0c0c0c0c0c0', 3, 'manual', 'approved', '2026-11-27T00:00:00.000Z', '2026-11-27T00:00:00.000Z')`);
+  database.public.none(tenantMigration);
+  database.public.none(`INSERT INTO qa_test_case (test_case_id, tenant_id, current_version, source, status, created_at, updated_at)
+    VALUES ('c0c0c0c0-1111-4111-8111-c0c0c0c0c0c0', '00000000-0000-4000-8000-000000000001', 3, 'manual', 'approved', '2026-11-27T00:00:00.000Z', '2026-11-27T00:00:00.000Z')`);
   database.public.none(`INSERT INTO qa_test_case_version (test_case_id, version, title, source, steps, created_at)
     VALUES ('c0c0c0c0-1111-4111-8111-c0c0c0c0c0c0', 3, 'Checkout', 'manual',
       '[{"stepId":"step-open","instruction":"Open checkout"},{"stepId":"step-pay","instruction":"Submit payment"}]'::jsonb,
       '2026-11-27T00:00:00.000Z')`);
   const adapter = database.adapters.createPg();
   const pool = new adapter.Pool() as unknown as Pool;
-  const repository = new PostgresTestRunRepository(pool);
-  return { database, pool, repository };
+  return { pool, repository: new PostgresTestRunRepository(pool) };
 }
 
-test("PostgreSQL repository persists run, ordered step results and deduplicated evidence references", async () => {
+test("PostgreSQL repository persists tenant-bound runs, ordered steps and deduplicated evidence", async () => {
   const { pool, repository } = await setup();
   const executor: StepExecutor = {
     async execute(step, index) {
@@ -57,11 +59,12 @@ test("PostgreSQL repository persists run, ordered step results and deduplicated 
   assert.equal(run.status, "passed");
   assert.equal(run.stepResults.length, 2);
   assert.ok(run.finishedAt);
+  assert.equal(await service.get(run.runId, "00000000-0000-4000-8000-000000000002"), undefined);
 
-  const attached = await service.attachEvidence(run.runId, "step-pay", evidence);
+  const attached = await service.attachEvidence(run.runId, "step-pay", tenantId, evidence);
   assert.equal(attached?.stepResults[1]?.evidenceRefs?.length, 1);
-  await service.attachEvidence(run.runId, "step-pay", evidence);
-  const reloaded = await service.get(run.runId);
+  await service.attachEvidence(run.runId, "step-pay", tenantId, evidence);
+  const reloaded = await service.get(run.runId, tenantId);
   assert.equal(reloaded?.testCaseVersion, 3);
   assert.deepEqual(reloaded?.stepResults.map((step) => step.stepId), ["step-open", "step-pay"]);
   assert.deepEqual(reloaded?.stepResults[1]?.evidenceRefs, [evidence]);
@@ -80,11 +83,7 @@ test("running state is durable before execution completes and executor errors be
   const gate = new Promise<void>((resolve) => { release = resolve; });
   const started = new Promise<void>((resolve) => { entered = resolve; });
   const executor: StepExecutor = {
-    async execute(step) {
-      entered();
-      await gate;
-      throw new Error("browser target disconnected");
-    }
+    async execute() { entered(); await gate; throw new Error("browser target disconnected"); }
   };
   const service = new TestRunService(executor, repository);
   const executing = service.execute({ ...testCase, steps: [testCase.steps[0]!] }, { platform: "web", targetId: "chromium" });

@@ -13,6 +13,7 @@ export interface StepExecutionResult {
 }
 export interface TestRun {
   runId: string;
+  tenantId: string;
   testCaseId: string;
   testCaseVersion: number;
   target: { platform: "web" | "android" | "ios" | "hybrid"; targetId: string };
@@ -47,7 +48,7 @@ export class TestRunService {
     const runId = randomUUID();
     const startedAt = new Date().toISOString();
     await this.repository.create({
-      runId, testCaseId: testCase.testCaseId, testCaseVersion: testCase.version,
+      runId, tenantId: testCase.tenantId, testCaseId: testCase.testCaseId, testCaseVersion: testCase.version,
       target, startedAt
     });
 
@@ -71,7 +72,7 @@ export class TestRunService {
             durationMs: Date.now() - stepStartedAt
           };
         }
-        await this.repository.appendStepResult(runId, result, index);
+        await this.repository.appendStepResult(runId, testCase.tenantId, result, index);
         if (result.status === "failed") {
           status = "failed";
           break;
@@ -92,15 +93,15 @@ export class TestRunService {
     if (heartbeatFailed) status = "failed";
     if (status === "passed" && testCase.steps.length === 0) status = "failed";
     if (status === "passed") {
-      const persisted = await this.repository.get(runId);
+      const persisted = await this.repository.get(runId, testCase.tenantId);
       if ((persisted?.stepResults.length ?? 0) !== testCase.steps.length) status = "failed";
     }
-    return this.repository.complete(runId, status, new Date().toISOString());
+    return this.repository.complete(runId, testCase.tenantId, status, new Date().toISOString());
   }
 
-  get(runId: string): Promise<TestRun | undefined> { return this.repository.get(runId); }
+  get(runId: string, tenantId: string): Promise<TestRun | undefined> { return this.repository.get(runId, tenantId); }
 
-  attachEvidence(runId: string, stepId: string, reference: EvidenceReference): Promise<TestRun | undefined> {
-    return this.repository.attachEvidence(runId, stepId, reference);
+  attachEvidence(runId: string, stepId: string, tenantId: string, reference: EvidenceReference): Promise<TestRun | undefined> {
+    return this.repository.attachEvidence(runId, stepId, tenantId, reference);
   }
 }

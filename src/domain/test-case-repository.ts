@@ -1,6 +1,7 @@
 import type { AuthoringSource, ReviewRecord, TestCase, TestStep } from "./test-case.js";
 
 export interface NewTestCase {
+  tenantId: string;
   title: string;
   description?: string;
   source: AuthoringSource;
@@ -14,10 +15,10 @@ export interface NewTestCaseVersion {
 }
 export interface TestCaseRepository {
   create(input: NewTestCase): Promise<TestCase>;
-  get(testCaseId: string): Promise<TestCase | undefined>;
-  list(): Promise<TestCase[]>;
-  submitForReview(testCaseId: string, expectedVersion?: number): Promise<TestCase | undefined>;
-  review(testCaseId: string, reviewerId: string, decision: "approved" | "rejected", comment?: string, expectedVersion?: number): Promise<ReviewRecord | undefined>;
-  createVersion(testCaseId: string, input: NewTestCaseVersion): Promise<TestCase | undefined>;
-  listReviews(testCaseId: string): Promise<ReviewRecord[]>;
+  get(testCaseId: string, tenantId: string): Promise<TestCase | undefined>;
+  list(tenantId: string): Promise<TestCase[]>;
+  submitForReview(testCaseId: string, tenantId: string, expectedVersion?: number): Promise<TestCase | undefined>;
+  review(testCaseId: string, tenantId: string, reviewerId: string, decision: "approved" | "rejected", comment?: string, expectedVersion?: number): Promise<ReviewRecord | undefined>;
+  createVersion(testCaseId: string, tenantId: string, input: NewTestCaseVersion): Promise<TestCase | undefined>;
+  listReviews(testCaseId: string, tenantId: string): Promise<ReviewRecord[]>;
 }

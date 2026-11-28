@@ -68,7 +68,7 @@ export class PostgresTestRunRepository implements TestRunRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(
+      const inserted = await client.query(
         `INSERT INTO qa_step_result (run_id, step_id, position, status, message, duration_ms)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [runId, result.stepId, position, result.status, result.message, result.durationMs]

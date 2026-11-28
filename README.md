@@ -52,6 +52,35 @@ Recovery settings:
 
 The in-memory repository does not persist runs across process restarts and its recovery operation is intentionally a no-op.
 
+### Authentication, authorization and tenant isolation
+
+Production mode requires a signed HS256 JWT on every API route except `/health`. Configure:
+
+- `QA_AUTH_JWT_SECRET`: at least 32 bytes of high-entropy secret material.
+- `QA_AUTH_ISSUER`: exact expected JWT `iss` claim (required in production).
+- `QA_AUTH_AUDIENCE`: exact expected JWT `aud` value (required in production).
+- `QA_AUTH_REQUIRED=true`: enables required authentication outside production too.
+
+The API validates the signature, algorithm, expiry, optional not-before time, issuer, audience, subject, tenant UUID, and role claims. Tokens use claims `sub`, `tenant_id`, `roles`, `exp`, `iss`, and `aud`. Supported roles are `admin`, `author`, `reviewer`, `executor`, and `viewer`. The authenticated subject, not the client-supplied reviewer field, is recorded as the reviewer identity.
+
+Authorization boundaries:
+- `author`: create, submit, and version Test Cases.
+- `reviewer`: approve or reject submitted Test Cases.
+- `executor`: execute approved Test Cases and attach evidence.
+- `viewer`: read Test Cases and Test Runs.
+- `admin`: all of the above.
+
+Test Case and Test Run repository operations are tenant-scoped. PostgreSQL stores `tenant_id` on both aggregates, enforces tenant existence, and enforces that a Test Run's tenant matches its Test Case. Cross-tenant lookups return not found rather than disclosing resource existence. Tenant IDs come only from the verified token; request payloads cannot select a tenant.
+
+Migration `005_tenant_isolation.sql` creates the default development tenant and backfills existing records into it. Provision additional tenants through a controlled database administration process, for example:
+
+```sql
+INSERT INTO qa_tenant (tenant_id, name)
+VALUES ('<new-tenant-uuid>', '<tenant-name>');
+```
+
+The identity/token issuer must then issue tokens with that tenant UUID. Do not use the development authentication mode on a publicly reachable deployment: outside production it is disabled by default for local development unless `QA_AUTH_REQUIRED=true`.
+
 ### Web execution
 
 ```bash
