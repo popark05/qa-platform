@@ -15,6 +15,12 @@ struct FixtureScreen: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
+            Button("Continue") {
+                submitted = true
+            }
+            .accessibilityLabel("Continue")
+            .accessibilityIdentifier("continueButton")
+
             TextField("Email", text: $email)
                 .accessibilityLabel("Email")
                 .accessibilityIdentifier("emailField")
@@ -22,14 +28,10 @@ struct FixtureScreen: View {
                 .autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
 
-            Button("Continue") {
-                submitted = true
-            }
-            .accessibilityIdentifier("continueButton")
-
             if submitted {
                 Text("Welcome")
                     .font(.title)
+                    .accessibilityLabel("Welcome")
                     .accessibilityIdentifier("welcomeMessage")
             }
             Spacer()

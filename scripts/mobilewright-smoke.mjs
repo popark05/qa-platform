@@ -18,11 +18,11 @@ try {
   await email.waitFor({ state: "visible", timeout: 15_000 });
   await email.fill("qa@example.test");
 
-  const continueButton = device.screen.getByRole("button", { name: "Continue" });
+  const continueButton = device.screen.getByLabel("Continue");
   await continueButton.waitFor({ state: "visible", timeout: 10_000 });
   await continueButton.tap();
 
-  const welcome = device.screen.getByText("Welcome", { exact: true });
+  const welcome = device.screen.getByLabel("Welcome");
   await welcome.waitFor({ state: "visible", timeout: 10_000 });
   assert.match(await welcome.getText(), /Welcome/);
   process.stdout.write(platform + " Mobilewright native smoke test passed\n");
