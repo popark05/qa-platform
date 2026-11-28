@@ -66,14 +66,16 @@ export class PostgresTestRunRepository implements TestRunRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const inserted = await client.query(
-        `INSERT INTO qa_step_result (run_id, step_id, position, status, message, duration_ms)
-         SELECT run_id, $3, $4, $5, $6, $7 FROM qa_test_run
-         WHERE run_id = $1 AND tenant_id = $2 AND status = 'running'
-         RETURNING step_id`,
-        [runId, tenantId, result.stepId, position, result.status, result.message, result.durationMs]
+      const owner = await client.query(
+        "SELECT 1 FROM qa_test_run WHERE run_id = $1 AND tenant_id = $2 AND status = 'running' FOR UPDATE",
+        [runId, tenantId]
       );
-      if (inserted.rowCount !== 1) throw new Error("test_run_not_running_or_tenant_mismatch");
+      if (owner.rowCount !== 1) throw new Error("test_run_not_running_or_tenant_mismatch");
+      await client.query(
+        `INSERT INTO qa_step_result (run_id, step_id, position, status, message, duration_ms)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [runId, result.stepId, position, result.status, result.message, result.durationMs]
+      );
       for (const reference of result.evidenceRefs ?? []) {
         await this.insertEvidence(client, runId, result.stepId, reference);
       }
