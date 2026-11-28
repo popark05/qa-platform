@@ -105,7 +105,8 @@ Free-form test step `instruction` is descriptive only. Real execution requires a
 Configure `REVERSE_SCREEN_BASE_URL` to enable step-level evidence references:
 
 ```bash
-REVERSE_SCREEN_BASE_URL=http://localhost:3000 npm start
+REVERSE_SCREEN_BASE_URL=http://localhost:3000 \
+REVERSE_SCREEN_SERVICE_TOKEN='<random-secret-at-least-32-bytes>' npm start
 ```
 
 After a Test Run is created, attach an evidence artifact owned by Reverse Screen:
@@ -117,7 +118,7 @@ Content-Type: application/json
 { "evidenceId": "reverse-screen-evidence-uuid" }
 ```
 
-QA Platform resolves metadata through Reverse Screen's versioned `/v1/evidence-artifacts/{evidenceId}` API, validates it, and attaches a versioned reference to the Step Result. Retrieve the updated run with `GET /v1/test-runs/{runId}`. Duplicate attachments are idempotent.
+QA Platform resolves metadata through Reverse Screen's versioned `/v1/evidence-artifacts/{evidenceId}` API using the `REVERSE_SCREEN_SERVICE_TOKEN` bearer credential. Reverse Screen must be configured with the same shared secret and protects metadata and download-URL routes with constant-time token comparison. Configure a random secret of at least 32 bytes in both services, keep it in deployment secret storage, and rotate it in both deployments together. Before attaching a reference, QA Platform downloads the binary through a fresh signed URL and checks its content type, byte size, and SHA-256 against the metadata; it discards the binary and signed URL after verification. Retrieve the updated run with `GET /v1/test-runs/{runId}`. Duplicate attachments are idempotent.
 
 The contract is defined in [reverse-screen-evidence-reference.v1.schema.json](contracts/reverse-screen-evidence-reference.v1.schema.json). QA Platform stores only stable evidence metadata references, never binary bytes or temporary presigned URLs. To access the binary, a client requests a fresh download URL from Reverse Screen.
 

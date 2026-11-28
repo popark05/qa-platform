@@ -23,8 +23,14 @@ let recoveryTimer: ReturnType<typeof setInterval> | undefined;
 const testCaseRepository = pool ? new PostgresTestCaseRepository(pool) : new InMemoryTestCaseRepository();
 const createRunService = (executor?: ConstructorParameters<typeof TestRunService>[0]) =>
   new TestRunService(executor, runRepository);
-const evidenceResolver = process.env.REVERSE_SCREEN_BASE_URL
-  ? new ReverseScreenEvidenceClient(process.env.REVERSE_SCREEN_BASE_URL)
+const reverseScreenBaseUrl = process.env.REVERSE_SCREEN_BASE_URL;
+const reverseScreenServiceToken = process.env.REVERSE_SCREEN_SERVICE_TOKEN;
+if (reverseScreenBaseUrl && !reverseScreenServiceToken) {
+  await pool?.end();
+  throw new Error("REVERSE_SCREEN_SERVICE_TOKEN is required when REVERSE_SCREEN_BASE_URL is configured");
+}
+const evidenceResolver = reverseScreenBaseUrl && reverseScreenServiceToken
+  ? new ReverseScreenEvidenceClient(reverseScreenBaseUrl, reverseScreenServiceToken)
   : undefined;
 const evidenceOptions = evidenceResolver ? { evidenceResolver } : {};
 const authMode = process.env.QA_AUTH_REQUIRED === "true" || process.env.NODE_ENV === "production" ? "required" : "disabled";
