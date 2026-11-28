@@ -37,7 +37,8 @@ The opt-in `MobilewrightStepExecutor` uses the documented `ios.launch()` / `andr
 
 Supported native mobile actions:
 - `navigate`: opens a URL or deep link through `device.goto()`.
-- `click`: resolves a native locator and calls `tap()`.
+- `click`: resolves a native locator and calls `tap()`. Optional `waitFor` (a locator) waits up to 5 s for the target screen after the tap.
+- `back`: platform back navigation (`screen.goBack()`). Optional `waitFor` waits for the target screen; if it is not visible after 3 s, Back is pressed once more because Android's first Back may only dismiss the soft keyboard.
 - `fill`: fills a native text field.
 - `assert_visible` and `assert_text`: checks visibility or retrieved text.
 - `wait_for`: waits for visible/hidden/enabled/disabled state.
@@ -56,6 +57,8 @@ Example:
 { "type": "fill", "locator": { "by": "label", "value": "Email" }, "value": "qa@example.test" }
 { "type": "assert_text", "locator": { "by": "text", "value": "Welcome" }, "expected": "Welcome" }
 { "type": "swipe", "direction": "up", "distance": 250 }
+{ "type": "click", "locator": { "by": "role", "value": "button", "name": "Saved", "exact": true }, "waitFor": { "by": "text", "value": "No saved updates", "exact": true } }
+{ "type": "back", "waitFor": { "by": "text", "value": "Now in Android", "exact": true } }
 ```
 
 The native adapter deliberately rejects CSS/XPath and arbitrary script execution. WebView DOM automation is not silently inferred from a hybrid target: it needs an explicit context-aware action contract and is a later increment. The initial session manager accepts only `ios` and `android` execution targets; `hybrid` is rejected until the target model can specify the native platform and WebView/native context.

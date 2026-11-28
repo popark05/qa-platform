@@ -65,3 +65,41 @@ test("requires run context and an executable action", async () => {
   assert.equal((await executor.execute({ stepId: "1", instruction: "no context" }, 0)).message, "run_context_required");
   assert.match((await executor.execute({ stepId: "2", instruction: "no action" }, 0, context)).message, /step.action is required/);
 });
+
+test("click waits for the target screen text after tapping", async () => {
+  const { calls, executor } = createFake();
+  const result = await executor.execute(step({
+    type: "click", locator: { by: "role", value: "button", name: "Saved" },
+    waitFor: { by: "text", value: "No saved updates", exact: true }
+  }), 0, context);
+  assert.equal(result.status, "passed", result.message);
+  assert.deepEqual(calls, ["role:button:Saved", "tap", "text:No saved updates", "wait:visible"]);
+});
+
+test("back presses again when the first press only dismissed the keyboard", async () => {
+  const calls: string[] = [];
+  let waits = 0;
+  const locator = {
+    tap: async () => {}, fill: async () => {}, isVisible: async () => true, getText: async () => "",
+    waitFor: async () => { waits++; calls.push(`wait-${waits}`); if (waits === 1) throw new Error("timeout"); }
+  };
+  const screen = {
+    getByRole: () => locator, getByText: (value: string) => { calls.push(`text:${value}`); return locator; },
+    getByTestId: () => locator, getByLabel: () => locator, swipe: async () => {},
+    goBack: async () => { calls.push("back"); }
+  };
+  const executor = new MobilewrightStepExecutor({
+    getDevice: async () => ({ screen, goto: async () => {}, close: async () => {} }),
+    closeRun: async () => {}, close: async () => {}
+  });
+  const result = await executor.execute(step({ type: "back", waitFor: { by: "text", value: "Now in Android", exact: true } }), 0, context);
+  assert.equal(result.status, "passed", result.message);
+  assert.deepEqual(calls, ["back", "text:Now in Android", "wait-1", "back", "wait-2"]);
+});
+
+test("back fails clearly when the device cannot navigate back", async () => {
+  const { executor } = createFake();
+  const result = await executor.execute(step({ type: "back" }), 0, context);
+  assert.equal(result.status, "failed");
+  assert.match(result.message, /back navigation is not supported/);
+});

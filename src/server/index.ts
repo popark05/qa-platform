@@ -4,6 +4,7 @@ import { MobilewrightStepExecutor } from "../adapters/mobilewright-step-executor
 import { PlaywrightSessionManager, type PlaywrightBrowserName } from "../adapters/playwright-session-manager.js";
 import { ReverseScreenEvidenceClient } from "../adapters/reverse-screen-evidence-client.js";
 import { WireflowFlowClient } from "../adapters/wireflow-flow-client.js";
+import { ReverseScreenDiscoveryClient } from "../adapters/reverse-screen-discovery-client.js";
 import { TestRunService } from "../domain/test-run.js";
 import { PostgresTestRunRepository } from "../infrastructure/postgres-test-run-repository.js";
 import { PostgresTestCaseRepository } from "../infrastructure/postgres-test-case-repository.js";
@@ -33,6 +34,9 @@ const evidenceResolver = process.env.REVERSE_SCREEN_BASE_URL
   : undefined;
 const integrationOptions = {
   ...(evidenceResolver ? { evidenceResolver } : {}),
+  ...(process.env.REVERSE_SCREEN_BASE_URL ? {
+    discoverySource: new ReverseScreenDiscoveryClient(process.env.REVERSE_SCREEN_BASE_URL, { serviceToken: process.env.REVERSE_SCREEN_SERVICE_TOKEN! })
+  } : {}),
   ...(process.env.WIREFLOW_BASE_URL ? { flowSource: new WireflowFlowClient(process.env.WIREFLOW_BASE_URL) } : {})
 };
 const authMode = process.env.QA_AUTH_REQUIRED === "true" || process.env.NODE_ENV === "production" ? "required" : "disabled";

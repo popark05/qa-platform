@@ -14,6 +14,8 @@ export interface MobilewrightScreen {
   getByTestId(testId: string): MobilewrightLocator;
   getByLabel(label: string): MobilewrightLocator;
   swipe(direction: "up" | "down" | "left" | "right", options?: { distance?: number; duration?: number }): Promise<void>;
+  /** Platform back navigation (Android back button / iOS back gesture). */
+  goBack?(): Promise<void>;
 }
 
 export interface MobilewrightDevice {

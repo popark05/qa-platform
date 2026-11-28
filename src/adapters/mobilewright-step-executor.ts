@@ -9,11 +9,15 @@ type LocatorSpec =
 
 type MobileAction =
   | { type: "navigate"; url: string }
-  | { type: "click" | "assert_visible"; locator: LocatorSpec }
+  | { type: "click"; locator: LocatorSpec; waitFor?: LocatorSpec }
+  | { type: "back"; waitFor?: LocatorSpec }
+  | { type: "assert_visible"; locator: LocatorSpec }
   | { type: "fill"; locator: LocatorSpec; value: string }
   | { type: "assert_text"; locator: LocatorSpec; expected: string }
   | { type: "wait_for"; locator: LocatorSpec; state: "visible" | "hidden" | "enabled" | "disabled" }
   | { type: "swipe"; direction: "up" | "down" | "left" | "right"; distance?: number; duration?: number };
+
+const WAIT_FOR_TARGET_MS = 5_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -49,6 +53,12 @@ function parseAction(serialized: string): MobileAction {
       if (typeof value.url !== "string" || !value.url) throw new Error("navigate action requires url");
       return { type: "navigate", url: value.url };
     case "click":
+      return {
+        type: "click", locator: parseLocator(value.locator),
+        ...(value.waitFor === undefined ? {} : { waitFor: parseLocator(value.waitFor) })
+      };
+    case "back":
+      return { type: "back", ...(value.waitFor === undefined ? {} : { waitFor: parseLocator(value.waitFor) }) };
     case "assert_visible":
       return { type: value.type, locator: parseLocator(value.locator) };
     case "fill":
@@ -90,6 +100,19 @@ export class MobilewrightStepExecutor implements StepExecutor {
 
       if (action.type === "navigate") {
         await device.goto(action.url);
+      } else if (action.type === "back") {
+        if (!device.screen.goBack) throw new Error("back navigation is not supported by this device");
+        await device.screen.goBack();
+        if (action.waitFor) {
+          const target = this.resolveLocator(device.screen, action.waitFor);
+          try {
+            await target.waitFor({ state: "visible", timeout: 3_000 });
+          } catch {
+            // On Android the first Back press may only dismiss the soft keyboard; press once more.
+            await device.screen.goBack();
+            await target.waitFor({ state: "visible", timeout: WAIT_FOR_TARGET_MS });
+          }
+        }
       } else if (action.type === "swipe") {
         await device.screen.swipe(action.direction, {
           ...(action.distance === undefined ? {} : { distance: action.distance }),
@@ -98,7 +121,10 @@ export class MobilewrightStepExecutor implements StepExecutor {
       } else {
         const locator = this.resolveLocator(device.screen, action.locator);
         switch (action.type) {
-          case "click": await locator.tap(); break;
+          case "click":
+            await locator.tap();
+            if (action.waitFor) await this.resolveLocator(device.screen, action.waitFor).waitFor({ state: "visible", timeout: WAIT_FOR_TARGET_MS });
+            break;
           case "fill": await locator.fill(action.value); break;
           case "assert_visible":
             if (!(await locator.isVisible())) throw new Error("expected element to be visible");

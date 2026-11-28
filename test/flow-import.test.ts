@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import type { Pool } from "pg";
 import { newDb } from "pg-mem";
+import { ReverseScreenDiscoveryClient } from "../src/adapters/reverse-screen-discovery-client.js";
 import { WireflowFlowClient } from "../src/adapters/wireflow-flow-client.js";
 import {
   FlowNotApprovedError, FlowSourceUnavailableError, generateTestCaseFromFlow,
@@ -150,4 +151,74 @@ test("PostgreSQL repository persists case-level flow provenance", async () => {
   const plain = await cases.create({ tenantId, title: "Manual", source: "manual", steps: [{ stepId: "s1", instruction: "Open" }] });
   assert.equal((await cases.get(plain.testCaseId, tenantId))?.flowRef, undefined);
   await pool.end();
+});
+
+test("Reverse Screen transitions become executable click/back actions with a target-screen check", async () => {
+  const sessionId = "49d96024-09b2-46ad-ac50-2a08d942cc67";
+  const [HOME_STATE, SEARCH_STATE, BACK_ID] = ["s-home", "s-search", "b4c4b4c4-0000-8000-8000-000000000002"];
+  const element = (state: string, text: string, y: number) => ({
+    event_type: "element_observed", state_id: state, payload: { context_type: "native", visible: true, text, bounds: { y } }
+  });
+  const events = [
+    element(HOME_STATE, "Now in Android", 140), element(HOME_STATE, "For you", 2175),
+    element(SEARCH_STATE, "Recent searches", 369), element(SEARCH_STATE, "For you", 2175),
+    { event_type: "transition_observed", transition_id: TRANSITION, payload: {
+      action: "tap", locator_strategy: "role_name", locator_role: "button", locator_name: "Search",
+      source_state_id: HOME_STATE, target_state_id: SEARCH_STATE, target_screen_name: "Recent searches" } },
+    { event_type: "transition_observed", transition_id: BACK_ID, payload: {
+      action: "back", source_state_id: SEARCH_STATE, target_state_id: HOME_STATE, target_screen_name: "Now in Android" } }
+  ];
+  let authorization: string | undefined;
+  const server = createServer((request, response) => {
+    authorization = request.headers.authorization;
+    response.writeHead(request.url === `/v1/discovery-sessions/${sessionId}/events` ? 200 : 404, { "content-type": "application/json" })
+      .end(JSON.stringify({ session_id: sessionId, events }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const client = new ReverseScreenDiscoveryClient(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, { serviceToken: "t".repeat(32) });
+    const resolved = await client.resolveTransitions([
+      { sessionId, transitionId: TRANSITION }, { sessionId, transitionId: BACK_ID },
+      { sessionId, transitionId: "00000000-0000-4000-8000-00000000dead" }
+    ]);
+    assert.equal(authorization, `Bearer ${"t".repeat(32)}`);
+    assert.deepEqual(resolved.get(TRANSITION), {
+      action: "tap", locator: { strategy: "role_name", role: "button", name: "Search" }, targetText: "Recent searches"
+    });
+    assert.deepEqual(resolved.get(BACK_ID), { action: "back", targetText: "Now in Android" });
+    assert.equal(resolved.size, 2, "unknown transitions are left unresolved");
+
+    const withRefs: WireflowFlowModelV1 = {
+      ...flow,
+      edges: flow.edges.map((edge) => edge.edgeId === "e-search"
+        ? { ...edge, discoveryRef: { sourceSystem: "reverse-screen" as const, transitionId: TRANSITION, sessionId } }
+        : edge.edgeId === "e-back" ? { ...edge, discoveryRef: { sourceSystem: "reverse-screen" as const, transitionId: BACK_ID, sessionId } } : edge)
+    };
+    const generated = generateTestCaseFromFlow(withRefs, resolved);
+    const search = generated.steps.find((item) => item.stepId === "edge-e-search");
+    const back = generated.steps.find((item) => item.stepId === "edge-e-back");
+    assert.deepEqual(JSON.parse(search!.action!), {
+      type: "click", locator: { by: "role", value: "button", name: "Search", exact: true },
+      waitFor: { by: "text", value: "Recent searches", exact: true }
+    });
+    assert.deepEqual(JSON.parse(back!.action!), { type: "back", waitFor: { by: "text", value: "Now in Android", exact: true } });
+    assert.equal(generated.steps.find((item) => item.stepId === "edge-e-settings")?.action, undefined, "edges without discovery stay descriptive");
+    assert.match(generated.description, /2 step\(s\) have executable actions/);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("from-flow still creates a descriptive case when Reverse Screen is unavailable", async () => {
+  const sessionId = "49d96024-09b2-46ad-ac50-2a08d942cc67";
+  const withRef = { ...flow, edges: flow.edges.map((edge) => ({ ...edge, discoveryRef: { sourceSystem: "reverse-screen" as const, transitionId: TRANSITION, sessionId } })) };
+  const app = buildApp({
+    flowSource: { fetchApprovedFlow: async () => withRef },
+    discoverySource: { resolveTransitions: async () => { throw new FlowSourceUnavailableError("reverse_screen_http_503"); } }
+  });
+  const response = await app.inject({ method: "POST", url: "/v1/test-cases/from-flow", payload: { flowId } });
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.json().warning, "reverse_screen_unavailable_steps_not_executable");
+  assert.equal(response.json().executableStepCount, 0);
+  await app.close();
 });

@@ -6,7 +6,7 @@ import { TestRunService } from "../domain/test-run.js";
 import { EvidenceNotFoundError, EvidenceSourceUnavailableError, type EvidenceResolver } from "../domain/evidence-reference.js";
 import {
   FlowNotApprovedError, FlowNotFoundError, FlowSourceUnavailableError, generateTestCaseFromFlow,
-  type FlowSource, type StepFlowReference, type WireflowFlowModelV1
+  type DiscoveredTransition, type DiscoverySource, type FlowSource, type StepFlowReference, type WireflowFlowModelV1
 } from "../domain/flow-reference.js";
 import { AuthenticationError, DEFAULT_TENANT_ID, hasAnyRole, verifyBearerToken, type AuthConfig, type AuthRole } from "../security/auth.js";
 
@@ -61,6 +61,7 @@ const attachEvidenceSchema = {
 
 export interface AppOptions {
   testCases?: TestCaseRepository; runs?: TestRunService; evidenceResolver?: EvidenceResolver; flowSource?: FlowSource;
+  discoverySource?: DiscoverySource;
   auth?: AuthConfig; onClose?: () => Promise<void>;
 }
 type StepInput = { stepId?: string; instruction: string; action?: string; expectedResult?: string; flowRef?: StepFlowReference };
@@ -145,7 +146,20 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     const existing = (await testCases.list(tenantId)).find((item) =>
       item.flowRef?.flowId === flow.flowId && item.flowRef.flowVersion === flow.flowVersion);
     if (existing) return reply.code(200).send({ testCase: existing, created: false, skippedEdges: [] });
-    const generated = generateTestCaseFromFlow(flow);
+    // Executable actions come from Reverse Screen runtime facts; without them steps stay descriptive.
+    const refs = flow.edges.flatMap((edge) => edge.discoveryRef?.transitionId && edge.discoveryRef.sessionId
+      ? [{ sessionId: edge.discoveryRef.sessionId, transitionId: edge.discoveryRef.transitionId }] : []);
+    let transitions = new Map<string, DiscoveredTransition>();
+    let warning: string | undefined;
+    if (options.discoverySource && refs.length > 0) {
+      try {
+        transitions = await options.discoverySource.resolveTransitions(refs);
+      } catch (error) {
+        request.log.warn(error, "Reverse Screen transition resolution failed");
+        warning = "reverse_screen_unavailable_steps_not_executable";
+      }
+    }
+    const generated = generateTestCaseFromFlow(flow, transitions);
     if (generated.steps.length === 0) {
       return reply.code(422).send({ error: "flow_has_no_testable_edges", skippedEdges: generated.skippedEdges });
     }
@@ -153,7 +167,11 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       tenantId, title: generated.title, description: generated.description,
       source: "flow", steps: generated.steps, flowRef: generated.flowRef
     });
-    return reply.code(201).send({ testCase, created: true, skippedEdges: generated.skippedEdges });
+    return reply.code(201).send({
+      testCase, created: true, skippedEdges: generated.skippedEdges,
+      executableStepCount: generated.steps.filter((step) => step.action).length,
+      ...(warning ? { warning } : {})
+    });
   });
 
   app.get<{ Params: { testCaseId: string } }>("/v1/test-cases/:testCaseId", async (request, reply) => {
