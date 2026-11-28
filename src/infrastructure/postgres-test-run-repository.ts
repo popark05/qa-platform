@@ -4,18 +4,16 @@ import type { StepExecutionResult, TestRun, TestRunStatus } from "../domain/test
 import type { NewTestRun, TestRunRepository } from "../domain/test-run-repository.js";
 
 interface RunRow {
-  run_id: string; test_case_id: string; test_case_version: number; platform: TestRun["target"]["platform"];
-  target_id: string; status: TestRunStatus; started_at: Date | string; finished_at: Date | string | null;
+  run_id: string; tenant_id: string; test_case_id: string; test_case_version: number;
+  platform: TestRun["target"]["platform"]; target_id: string; status: TestRunStatus;
+  started_at: Date | string; finished_at: Date | string | null;
 }
-interface StepRow {
-  step_id: string; status: "passed" | "failed"; message: string; duration_ms: number;
-}
+interface StepRow { step_id: string; status: "passed" | "failed"; message: string; duration_ms: number }
 interface EvidenceRow {
   step_id: string; source_system: "reverse-screen"; evidence_id: string; contract_version: "1.0";
   kind: EvidenceReference["kind"]; content_type: string; byte_size: string | number;
   sha256: string; storage_uri: string; captured_at: Date | string;
 }
-
 const iso = (value: Date | string): string => new Date(value).toISOString();
 const mapEvidence = (row: EvidenceRow): EvidenceReference => ({
   contractVersion: row.contract_version, sourceSystem: row.source_system, evidenceId: row.evidence_id,
@@ -55,60 +53,64 @@ export class PostgresTestRunRepository implements TestRunRepository {
 
   async create(input: NewTestRun): Promise<TestRun> {
     await this.pool.query(
-      `INSERT INTO qa_test_run (run_id, test_case_id, test_case_version, platform, target_id, status, started_at)
-       VALUES ($1, $2, $3, $4, $5, 'running', $6)`,
-      [input.runId, input.testCaseId, input.testCaseVersion, input.target.platform, input.target.targetId, input.startedAt]
+      `INSERT INTO qa_test_run
+       (run_id, tenant_id, test_case_id, test_case_version, platform, target_id, status, started_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'running', $7)`,
+      [input.runId, input.tenantId, input.testCaseId, input.testCaseVersion,
+        input.target.platform, input.target.targetId, input.startedAt]
     );
-    return {
-      ...input, target: { ...input.target }, status: "running", stepResults: []
-    };
+    return { ...input, target: { ...input.target }, status: "running", stepResults: [] };
   }
 
-  async appendStepResult(runId: string, result: StepExecutionResult, position: number): Promise<void> {
+  async appendStepResult(runId: string, tenantId: string, result: StepExecutionResult, position: number): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const inserted = await client.query(
         `INSERT INTO qa_step_result (run_id, step_id, position, status, message, duration_ms)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [runId, result.stepId, position, result.status, result.message, result.durationMs]
+         SELECT run_id, $3, $4, $5, $6, $7 FROM qa_test_run
+         WHERE run_id = $1 AND tenant_id = $2 AND status = 'running'
+         RETURNING step_id`,
+        [runId, tenantId, result.stepId, position, result.status, result.message, result.durationMs]
       );
+      if (inserted.rowCount !== 1) throw new Error("test_run_not_running_or_tenant_mismatch");
       for (const reference of result.evidenceRefs ?? []) {
         await this.insertEvidence(client, runId, result.stepId, reference);
       }
-      await client.query("UPDATE qa_test_run SET last_heartbeat_at = now() WHERE run_id = $1 AND status = 'running'", [runId]);
+      await client.query(
+        "UPDATE qa_test_run SET last_heartbeat_at = now() WHERE run_id = $1 AND tenant_id = $2 AND status = 'running'",
+        [runId, tenantId]
+      );
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
-    } finally {
-      client.release();
-    }
+    } finally { client.release(); }
   }
 
-  async complete(runId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun> {
+  async complete(runId: string, tenantId: string, status: "passed" | "failed", finishedAt: string): Promise<TestRun> {
     const result = await this.pool.query(
-      `UPDATE qa_test_run SET status = $2, finished_at = $3
-       WHERE run_id = $1 AND status = 'running' RETURNING run_id`,
-      [runId, status, finishedAt]
+      `UPDATE qa_test_run SET status = $3, finished_at = $4
+       WHERE run_id = $1 AND tenant_id = $2 AND status = 'running' RETURNING run_id`,
+      [runId, tenantId, status, finishedAt]
     );
     if (result.rowCount !== 1) throw new Error("test_run_not_running");
-    const run = await this.get(runId);
+    const run = await this.get(runId, tenantId);
     if (!run) throw new Error("test_run_not_found_after_completion");
     return run;
   }
 
-  async get(runId: string): Promise<TestRun | undefined> {
-    const runResult = await this.pool.query<RunRow>("SELECT * FROM qa_test_run WHERE run_id = $1", [runId]);
+  async get(runId: string, tenantId: string): Promise<TestRun | undefined> {
+    const runResult = await this.pool.query<RunRow>(
+      "SELECT * FROM qa_test_run WHERE run_id = $1 AND tenant_id = $2", [runId, tenantId]
+    );
     const row = runResult.rows[0];
     if (!row) return undefined;
     const stepResult = await this.pool.query<StepRow>(
-      "SELECT step_id, status, message, duration_ms FROM qa_step_result WHERE run_id = $1 ORDER BY position",
-      [runId]
+      "SELECT step_id, status, message, duration_ms FROM qa_step_result WHERE run_id = $1 ORDER BY position", [runId]
     );
     const evidenceResult = await this.pool.query<EvidenceRow>(
-      "SELECT * FROM qa_step_evidence_reference WHERE run_id = $1 ORDER BY created_at, evidence_id",
-      [runId]
+      "SELECT * FROM qa_step_evidence_reference WHERE run_id = $1 ORDER BY created_at, evidence_id", [runId]
     );
     const refsByStep = new Map<string, EvidenceReference[]>();
     for (const evidence of evidenceResult.rows) {
@@ -117,7 +119,8 @@ export class PostgresTestRunRepository implements TestRunRepository {
       refsByStep.set(evidence.step_id, refs);
     }
     return {
-      runId: row.run_id, testCaseId: row.test_case_id, testCaseVersion: row.test_case_version,
+      runId: row.run_id, tenantId: row.tenant_id, testCaseId: row.test_case_id,
+      testCaseVersion: row.test_case_version,
       target: { platform: row.platform, targetId: row.target_id }, status: row.status,
       startedAt: iso(row.started_at),
       ...(row.finished_at ? { finishedAt: iso(row.finished_at) } : {}),
@@ -128,13 +131,15 @@ export class PostgresTestRunRepository implements TestRunRepository {
     };
   }
 
-  async attachEvidence(runId: string, stepId: string, reference: EvidenceReference): Promise<TestRun | undefined> {
+  async attachEvidence(runId: string, stepId: string, tenantId: string, reference: EvidenceReference): Promise<TestRun | undefined> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const exists = await client.query(
-        "SELECT 1 FROM qa_step_result WHERE run_id = $1 AND step_id = $2",
-        [runId, stepId]
+        `SELECT 1 FROM qa_step_result AS step
+         JOIN qa_test_run AS run ON run.run_id = step.run_id
+         WHERE step.run_id = $1 AND step.step_id = $2 AND run.tenant_id = $3`,
+        [runId, stepId, tenantId]
       );
       if (exists.rowCount !== 1) {
         await client.query("ROLLBACK");
@@ -145,10 +150,8 @@ export class PostgresTestRunRepository implements TestRunRepository {
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
-    } finally {
-      client.release();
-    }
-    return this.get(runId);
+    } finally { client.release(); }
+    return this.get(runId, tenantId);
   }
 
   private async insertEvidence(client: PoolClient, runId: string, stepId: string, reference: EvidenceReference): Promise<void> {
