@@ -14,21 +14,17 @@ const launcher = platform === "android" ? android : ios;
 const device = await launcher.launch({ deviceId, bundleId });
 
 try {
-  const email = device.screen.getByLabel("Email");
-  await email.waitFor({ state: "visible", timeout: 15_000 });
-  await email.fill("qa@example.test");
-
   const continueButton = device.screen.getByRole("button", { name: "Continue" });
   await continueButton.waitFor({ state: "visible", timeout: 10_000 });
   await continueButton.tap();
 
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  const tree = await device.screen.viewTree();
-  process.stdout.write("ACCESSIBILITY_TREE_AFTER_CONTINUE " + JSON.stringify(tree) + "\n");
-
   const completedButton = device.screen.getByRole("button", { name: "Welcome" });
   await completedButton.waitFor({ state: "visible", timeout: 10_000 });
   assert.match(await completedButton.getText(), /Welcome/);
+
+  const email = device.screen.getByLabel("Email");
+  await email.waitFor({ state: "visible", timeout: 10_000 });
+  await email.fill("qa@example.test");
   process.stdout.write(platform + " Mobilewright native smoke test passed\n");
 } finally {
   await device.close();
