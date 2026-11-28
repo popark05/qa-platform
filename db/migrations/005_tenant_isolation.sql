@@ -18,9 +18,9 @@ ALTER TABLE qa_test_case
   ADD CONSTRAINT qa_test_case_tenant_case_unique UNIQUE (tenant_id, test_case_id);
 
 ALTER TABLE qa_test_run ADD COLUMN IF NOT EXISTS tenant_id UUID;
-UPDATE qa_test_run AS run SET tenant_id = test_case.tenant_id
-FROM qa_test_case AS test_case
-WHERE run.test_case_id = test_case.test_case_id AND run.tenant_id IS NULL;
+-- All records predating tenant partitioning were assigned to the default tenant above.
+UPDATE qa_test_run SET tenant_id = '00000000-0000-4000-8000-000000000001'
+WHERE tenant_id IS NULL;
 ALTER TABLE qa_test_run ALTER COLUMN tenant_id SET NOT NULL;
 ALTER TABLE qa_test_run
   ADD CONSTRAINT qa_test_run_tenant_case_fk
