@@ -4,8 +4,20 @@ import { InMemoryTestCaseRepository, type TestCase } from "../domain/test-case.j
 import type { TestCaseRepository } from "../domain/test-case-repository.js";
 import { TestRunService } from "../domain/test-run.js";
 import { EvidenceNotFoundError, EvidenceSourceUnavailableError, type EvidenceResolver } from "../domain/evidence-reference.js";
+import {
+  FlowNotApprovedError, FlowNotFoundError, FlowSourceUnavailableError, generateTestCaseFromFlow,
+  type FlowSource, type StepFlowReference, type WireflowFlowModelV1
+} from "../domain/flow-reference.js";
 import { AuthenticationError, DEFAULT_TENANT_ID, hasAnyRole, verifyBearerToken, type AuthConfig, type AuthRole } from "../security/auth.js";
 
+const stepFlowRefSchema = {
+  type: "object", additionalProperties: false, required: ["edgeId"],
+  properties: { edgeId: { type: "string", minLength: 1, maxLength: 200 }, transitionId: { type: "string", format: "uuid" } }
+} as const;
+const fromFlowSchema = {
+  type: "object", additionalProperties: false, required: ["flowId"],
+  properties: { flowId: { type: "string", format: "uuid" } }
+} as const;
 const createTestCaseSchema = {
   type: "object", additionalProperties: false, required: ["title", "source", "steps"],
   properties: {
@@ -13,7 +25,8 @@ const createTestCaseSchema = {
     source: { type: "string", enum: ["manual", "ai"] },
     steps: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, required: ["instruction"], properties: {
       stepId: { type: "string" }, instruction: { type: "string", minLength: 1, maxLength: 2000 },
-      action: { type: "string", maxLength: 8000 }, expectedResult: { type: "string", maxLength: 2000 }
+      action: { type: "string", maxLength: 8000 }, expectedResult: { type: "string", maxLength: 2000 },
+      flowRef: stepFlowRefSchema
     } } }
   }
 } as const;
@@ -24,7 +37,8 @@ const createVersionSchema = {
     description: { type: "string", maxLength: 4000 },
     steps: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, required: ["instruction"], properties: {
       stepId: { type: "string" }, instruction: { type: "string", minLength: 1, maxLength: 2000 },
-      action: { type: "string", maxLength: 8000 }, expectedResult: { type: "string", maxLength: 2000 }
+      action: { type: "string", maxLength: 8000 }, expectedResult: { type: "string", maxLength: 2000 },
+      flowRef: stepFlowRefSchema
     } } }
   }
 } as const;
@@ -46,14 +60,15 @@ const attachEvidenceSchema = {
 } as const;
 
 export interface AppOptions {
-  testCases?: TestCaseRepository; runs?: TestRunService; evidenceResolver?: EvidenceResolver;
+  testCases?: TestCaseRepository; runs?: TestRunService; evidenceResolver?: EvidenceResolver; flowSource?: FlowSource;
   auth?: AuthConfig; onClose?: () => Promise<void>;
 }
-type StepInput = { stepId?: string; instruction: string; action?: string; expectedResult?: string };
+type StepInput = { stepId?: string; instruction: string; action?: string; expectedResult?: string; flowRef?: StepFlowReference };
 const normalizeSteps = (steps: StepInput[]) => steps.map((step) => ({
   stepId: step.stepId ?? randomUUID(), instruction: step.instruction,
   ...(step.action === undefined ? {} : { action: step.action }),
-  ...(step.expectedResult === undefined ? {} : { expectedResult: step.expectedResult })
+  ...(step.expectedResult === undefined ? {} : { expectedResult: step.expectedResult }),
+  ...(step.flowRef === undefined ? {} : { flowRef: step.flowRef })
 }));
 const isApproved = (testCase: TestCase) => testCase.status === "approved";
 const authorize = (request: FastifyRequest, reply: FastifyReply, roles: AuthRole[]): boolean => {
@@ -103,6 +118,38 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       return reply.code(201).send(item);
     }
   );
+
+  // Generates a draft Test Case from an approved Wireflow Review flow, pulled from the source system.
+  // The same flow version imported again returns the existing case instead of a duplicate.
+  app.post<{ Body: { flowId: string } }>("/v1/test-cases/from-flow", { schema: { body: fromFlowSchema } }, async (request, reply) => {
+    if (!authorize(request, reply, ["author"])) return;
+    if (!options.flowSource) return reply.code(501).send({ error: "flow_source_not_configured" });
+    let flow: WireflowFlowModelV1;
+    try {
+      flow = await options.flowSource.fetchApprovedFlow(request.body.flowId);
+    } catch (error) {
+      if (error instanceof FlowNotFoundError) return reply.code(404).send({ error: "source_flow_not_found" });
+      if (error instanceof FlowNotApprovedError) return reply.code(409).send({ error: "source_flow_not_approved" });
+      if (error instanceof FlowSourceUnavailableError) {
+        request.log.error(error);
+        return reply.code(502).send({ error: "flow_source_unavailable" });
+      }
+      throw error;
+    }
+    const tenantId = request.auth!.tenantId;
+    const existing = (await testCases.list(tenantId)).find((item) =>
+      item.flowRef?.flowId === flow.flowId && item.flowRef.flowVersion === flow.flowVersion);
+    if (existing) return reply.code(200).send({ testCase: existing, created: false, skippedEdges: [] });
+    const generated = generateTestCaseFromFlow(flow);
+    if (generated.steps.length === 0) {
+      return reply.code(422).send({ error: "flow_has_no_testable_edges", skippedEdges: generated.skippedEdges });
+    }
+    const testCase = await testCases.create({
+      tenantId, title: generated.title, description: generated.description,
+      source: "manual", steps: generated.steps, flowRef: generated.flowRef
+    });
+    return reply.code(201).send({ testCase, created: true, skippedEdges: generated.skippedEdges });
+  });
 
   app.get<{ Params: { testCaseId: string } }>("/v1/test-cases/:testCaseId", async (request, reply) => {
     if (!authorize(request, reply, readableRoles)) return;

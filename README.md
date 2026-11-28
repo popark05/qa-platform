@@ -100,6 +100,25 @@ Submit runs with `platform: "android"` or `platform: "ios"`; `targetId` is the s
 
 Free-form test step `instruction` is descriptive only. Real execution requires a structured JSON `action`. AI-authored cases remain pending until human review.
 
+## Wireflow Review flow import
+
+Configure `WIREFLOW_BASE_URL` to generate Test Cases from human-approved flows:
+
+```bash
+WIREFLOW_BASE_URL=http://localhost:3002 npm start
+```
+
+```http
+POST /v1/test-cases/from-flow
+Content-Type: application/json
+
+{ "flowId": "approved-flow-uuid" }
+```
+
+QA Platform pulls `GET {WIREFLOW_BASE_URL}/v1/flows/{flowId}/export` (Wireflow Review `flow-model` v1) instead of accepting the flow in the request, so approval cannot be forged by the caller. It creates one `draft` Test Case (`source: "manual"`) whose steps cover every edge once, ordered by walking the flow from its first node. Each instruction names the starting screen, and each step carries `flowRef: { edgeId, transitionId? }`, where `transitionId` is the Reverse Screen transition when the flow came from discovery. Edges touching `open_question` elements are not turned into steps and are listed in `skippedEdges`. The case stores `flowRef { sourceSystem, contractVersion, flowId, flowVersion, applicationId, approvalReviewId }`, which is kept on later versions; editing steps keeps their `flowRef` when it is sent back.
+
+Generated cases still go through submission and human review before they can run. Importing the same flow version again returns the existing case (`200`, `created: false`). Errors: `404 source_flow_not_found`, `409 source_flow_not_approved`, `422 flow_has_no_testable_edges`, `502 flow_source_unavailable`, `501 flow_source_not_configured`. PostgreSQL deployments must apply `db/migrations/006_test_case_flow_provenance.sql`.
+
 ## Reverse Screen evidence integration
 
 Configure `REVERSE_SCREEN_BASE_URL` and `REVERSE_SCREEN_SERVICE_TOKEN` to enable step-level evidence references. The token must equal Reverse Screen's `REVERSE_SCREEN_QA_SERVICE_TOKEN` (at least 32 bytes); it is sent as `Authorization: Bearer <token>` on every evidence read. The server refuses to start when the base URL is set without a token.

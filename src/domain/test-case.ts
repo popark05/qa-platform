@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { NewTestCase, NewTestCaseVersion, TestCaseRepository } from "./test-case-repository.js";
+import type { FlowReference, StepFlowReference } from "./flow-reference.js";
 
 export type AuthoringSource = "manual" | "ai";
 export type TestCaseStatus = "draft" | "pending_review" | "approved" | "rejected";
@@ -9,6 +10,8 @@ export interface TestStep {
   instruction: string;
   action?: string;
   expectedResult?: string;
+  /** Flow edge this step verifies, when generated from a Wireflow Review flow. */
+  flowRef?: StepFlowReference;
 }
 
 export interface TestCase {
@@ -20,6 +23,8 @@ export interface TestCase {
   source: AuthoringSource;
   status: TestCaseStatus;
   steps: TestStep[];
+  /** Approved flow snapshot this case was generated from; kept across versions. */
+  flowRef?: FlowReference;
   createdAt: string;
   updatedAt: string;
 }
@@ -87,6 +92,7 @@ export class InMemoryTestCaseRepository implements TestCaseRepository {
       testCaseId, tenantId, version: item.version + 1, title: input.title,
       ...(input.description === undefined ? {} : { description: input.description }),
       source: item.source, status: "draft", steps: structuredClone(input.steps),
+      ...(item.flowRef ? { flowRef: structuredClone(item.flowRef) } : {}),
       createdAt: item.createdAt, updatedAt: new Date().toISOString()
     };
     this.versions.get(testCaseId)?.set(next.version, structuredClone(next));

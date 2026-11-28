@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { ReviewRecord, TestCase, TestCaseStatus, TestStep } from "../domain/test-case.js";
 import type { NewTestCase, NewTestCaseVersion, TestCaseRepository } from "../domain/test-case-repository.js";
+import type { FlowReference } from "../domain/flow-reference.js";
 
 interface CaseRow {
   test_case_id: string; tenant_id: string; current_version: number; source: "manual" | "ai"; status: TestCaseStatus;
-  created_at: Date | string; updated_at: Date | string;
+  created_at: Date | string; updated_at: Date | string; flow_ref: FlowReference | string | null;
   version: number; title: string; description: string | null; steps: TestStep[] | string;
   version_source: "manual" | "ai"; version_created_at: Date | string;
 }
@@ -19,6 +20,8 @@ const mapCase = (row: CaseRow): TestCase => ({
   testCaseId: row.test_case_id, tenantId: row.tenant_id, version: row.version, title: row.title,
   ...(row.description === null ? {} : { description: row.description }),
   source: row.version_source, status: row.status, steps: parseSteps(row.steps),
+  ...(row.flow_ref === null || row.flow_ref === undefined
+    ? {} : { flowRef: typeof row.flow_ref === "string" ? JSON.parse(row.flow_ref) as FlowReference : row.flow_ref }),
   createdAt: iso(row.created_at), updatedAt: iso(row.updated_at)
 });
 const mapReview = (row: ReviewRow): ReviewRecord => ({
@@ -26,7 +29,7 @@ const mapReview = (row: ReviewRow): ReviewRecord => ({
   reviewerId: row.reviewer_id, decision: row.decision,
   ...(row.comment === null ? {} : { comment: row.comment }), reviewedAt: iso(row.reviewed_at)
 });
-const currentSelect = `SELECT c.test_case_id, c.tenant_id, c.current_version, c.source, c.status, c.created_at, c.updated_at,
+const currentSelect = `SELECT c.test_case_id, c.tenant_id, c.current_version, c.source, c.status, c.created_at, c.updated_at, c.flow_ref,
   v.version, v.title, v.description, v.source AS version_source, v.steps, v.created_at AS version_created_at
   FROM qa_test_case c JOIN qa_test_case_version v
   ON v.test_case_id = c.test_case_id AND v.version = c.current_version`;
@@ -42,8 +45,8 @@ export class PostgresTestCaseRepository implements TestCaseRepository {
     try {
       await client.query("BEGIN");
       await client.query(
-        "INSERT INTO qa_test_case (test_case_id, tenant_id, current_version, source, status, created_at, updated_at) VALUES ($1, $2, 1, $3, $4, $5, $5)",
-        [id, input.tenantId, input.source, status, now]
+        "INSERT INTO qa_test_case (test_case_id, tenant_id, current_version, source, status, created_at, updated_at, flow_ref) VALUES ($1, $2, 1, $3, $4, $5, $5, $6::jsonb)",
+        [id, input.tenantId, input.source, status, now, input.flowRef ? JSON.stringify(input.flowRef) : null]
       );
       await client.query(
         "INSERT INTO qa_test_case_version (test_case_id, version, title, description, source, steps, created_at) VALUES ($1, 1, $2, $3, $4, $5::jsonb, $6)",

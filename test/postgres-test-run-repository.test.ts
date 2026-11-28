@@ -12,6 +12,7 @@ const migration = await readFile(new URL("../db/migrations/001_test_run.sql", im
 const testCaseMigration = await readFile(new URL("../db/migrations/002_test_case_review.sql", import.meta.url), "utf8");
 const recoveryMigration = await readFile(new URL("../db/migrations/004_test_run_recovery.sql", import.meta.url), "utf8");
 const tenantMigration = await readFile(new URL("../db/migrations/005_tenant_isolation.sql", import.meta.url), "utf8");
+const flowProvenanceMigration = await readFile(new URL("../db/migrations/006_test_case_flow_provenance.sql", import.meta.url), "utf8");
 const tenantId = "00000000-0000-4000-8000-000000000001";
 const evidence: EvidenceReference = {
   contractVersion: "1.0", sourceSystem: "reverse-screen",
@@ -36,6 +37,7 @@ async function setup() {
   database.public.none(testCaseMigration);
   database.public.none(recoveryMigration);
   database.public.none(tenantMigration);
+  database.public.none(flowProvenanceMigration);
   database.public.none(`INSERT INTO qa_test_case (test_case_id, tenant_id, current_version, source, status, created_at, updated_at)
     VALUES ('c0c0c0c0-1111-4111-8111-c0c0c0c0c0c0', '00000000-0000-4000-8000-000000000001', 3, 'manual', 'approved', '2026-11-27T00:00:00.000Z', '2026-11-27T00:00:00.000Z')`);
   database.public.none(`INSERT INTO qa_test_case_version (test_case_id, version, title, source, steps, created_at)

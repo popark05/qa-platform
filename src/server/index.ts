@@ -3,6 +3,7 @@ import { MobilewrightSessionManager } from "../adapters/mobilewright-session-man
 import { MobilewrightStepExecutor } from "../adapters/mobilewright-step-executor.js";
 import { PlaywrightSessionManager, type PlaywrightBrowserName } from "../adapters/playwright-session-manager.js";
 import { ReverseScreenEvidenceClient } from "../adapters/reverse-screen-evidence-client.js";
+import { WireflowFlowClient } from "../adapters/wireflow-flow-client.js";
 import { TestRunService } from "../domain/test-run.js";
 import { PostgresTestRunRepository } from "../infrastructure/postgres-test-run-repository.js";
 import { PostgresTestCaseRepository } from "../infrastructure/postgres-test-case-repository.js";
@@ -30,7 +31,10 @@ if (process.env.REVERSE_SCREEN_BASE_URL && !process.env.REVERSE_SCREEN_SERVICE_T
 const evidenceResolver = process.env.REVERSE_SCREEN_BASE_URL
   ? new ReverseScreenEvidenceClient(process.env.REVERSE_SCREEN_BASE_URL, { serviceToken: process.env.REVERSE_SCREEN_SERVICE_TOKEN! })
   : undefined;
-const evidenceOptions = evidenceResolver ? { evidenceResolver } : {};
+const integrationOptions = {
+  ...(evidenceResolver ? { evidenceResolver } : {}),
+  ...(process.env.WIREFLOW_BASE_URL ? { flowSource: new WireflowFlowClient(process.env.WIREFLOW_BASE_URL) } : {})
+};
 const authMode = process.env.QA_AUTH_REQUIRED === "true" || process.env.NODE_ENV === "production" ? "required" : "disabled";
 const authSecret = process.env.QA_AUTH_JWT_SECRET;
 if (authMode === "required" && (!authSecret || Buffer.byteLength(authSecret) < 32)) {
@@ -64,7 +68,7 @@ if (adapter === "playwright") {
   const sessions = new PlaywrightSessionManager(browserName);
   app = buildApp({
     testCases: testCaseRepository, runs: createRunService(new ManagedPlaywrightStepExecutor(sessions)),
-    ...evidenceOptions, ...authOptions, onClose: () => closeResources(() => sessions.close())
+    ...integrationOptions, ...authOptions, onClose: () => closeResources(() => sessions.close())
   });
 } else if (adapter === "mobilewright") {
   const bundleId = process.env.MOBILE_APP_BUNDLE_ID;
@@ -72,10 +76,10 @@ if (adapter === "playwright") {
   const sessions = new MobilewrightSessionManager(bundleId);
   app = buildApp({
     testCases: testCaseRepository, runs: createRunService(new MobilewrightStepExecutor(sessions)),
-    ...evidenceOptions, ...authOptions, onClose: () => closeResources(() => sessions.close())
+    ...integrationOptions, ...authOptions, onClose: () => closeResources(() => sessions.close())
   });
 } else if (adapter === "mock") {
-  app = buildApp({ testCases: testCaseRepository, runs: createRunService(), ...evidenceOptions, ...authOptions, onClose: () => closeResources() });
+  app = buildApp({ testCases: testCaseRepository, runs: createRunService(), ...integrationOptions, ...authOptions, onClose: () => closeResources() });
 } else {
   await pool?.end();
   throw new Error("QA_EXECUTION_ADAPTER must be mock, playwright or mobilewright");

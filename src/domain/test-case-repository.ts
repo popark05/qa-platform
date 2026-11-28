@@ -1,4 +1,5 @@
 import type { AuthoringSource, ReviewRecord, TestCase, TestStep } from "./test-case.js";
+import type { FlowReference } from "./flow-reference.js";
 
 export interface NewTestCase {
   tenantId: string;
@@ -6,6 +7,7 @@ export interface NewTestCase {
   description?: string;
   source: AuthoringSource;
   steps: TestStep[];
+  flowRef?: FlowReference;
 }
 export interface NewTestCaseVersion {
   expectedVersion: number;

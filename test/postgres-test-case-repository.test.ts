@@ -8,6 +8,7 @@ import type { Pool } from "pg";
 const runMigration = await readFile(new URL("../db/migrations/001_test_run.sql", import.meta.url), "utf8");
 const caseMigration = await readFile(new URL("../db/migrations/002_test_case_review.sql", import.meta.url), "utf8");
 const tenantMigration = await readFile(new URL("../db/migrations/005_tenant_isolation.sql", import.meta.url), "utf8");
+const flowProvenanceMigration = await readFile(new URL("../db/migrations/006_test_case_flow_provenance.sql", import.meta.url), "utf8");
 const tenantId = "00000000-0000-4000-8000-000000000001";
 const otherTenantId = "00000000-0000-4000-8000-000000000002";
 
@@ -16,6 +17,7 @@ async function setup() {
   database.public.none(runMigration);
   database.public.none(caseMigration);
   database.public.none(tenantMigration);
+  database.public.none(flowProvenanceMigration);
   database.public.none("INSERT INTO qa_tenant (tenant_id, name) VALUES ('" + otherTenantId + "', 'Other tenant')");
   const adapter = database.adapters.createPg();
   const pool = new adapter.Pool() as unknown as Pool;
