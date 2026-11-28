@@ -19,7 +19,7 @@ try {
   await email.fill("qa@example.test");
 
   const continueButton = device.screen.getByRole("button", { name: "Continue" });
-  await continueButton.waitFor({ state: "enabled", timeout: 10_000 });
+  await continueButton.waitFor({ state: "visible", timeout: 10_000 });
   await continueButton.tap();
 
   const welcome = device.screen.getByText("Welcome", { exact: true });
