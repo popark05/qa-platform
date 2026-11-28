@@ -129,7 +129,7 @@ The `Mobilewright Native E2E` workflow builds small native fixture apps and driv
 
 - Android: builds a debug APK with Gradle, installs it on an API 35 Android emulator, and exercises the Email field, Continue button, and Welcome result.
 - iOS: builds a SwiftUI simulator app with Xcode, installs it on an iPhone simulator, and runs the same semantic interaction sequence.
-- Both jobs call `npx mobilewright doctor` and run `scripts/mobilewright-smoke.mjs` through the Mobilewright Android/iOS launch APIs.
+- Both jobs run `scripts/mobilewright-smoke.mjs` through the Mobilewright Android/iOS launch APIs after installing the fixture app.
 
 The workflow runs on pushes and pull requests that change the Mobilewright adapter, fixtures, smoke script, or package dependencies, and can also be started manually. It validates simulator/emulator integration; physical-device certification still requires a connected device lab and platform signing/provisioning.
 
