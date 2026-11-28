@@ -19,18 +19,18 @@ public final class MainActivity extends Activity {
     int padding = (int) (24 * getResources().getDisplayMetrics().density);
     layout.setPadding(padding, padding, padding, padding);
 
+    Button continueButton = new Button(this);
+    continueButton.setText("Continue");
+    continueButton.setContentDescription("Continue");
+    layout.addView(continueButton, new LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
     EditText email = new EditText(this);
     email.setSingleLine(true);
     email.setHint("Email");
     email.setContentDescription("Email");
     email.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
     layout.addView(email, new LinearLayout.LayoutParams(
-      LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-    Button continueButton = new Button(this);
-    continueButton.setText("Continue");
-    continueButton.setContentDescription("Continue");
-    layout.addView(continueButton, new LinearLayout.LayoutParams(
       LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
     TextView welcome = new TextView(this);
