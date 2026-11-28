@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { android, ios } from "mobilewright";
+import { MobilewrightSessionManager } from "../src/adapters/mobilewright-session-manager.ts";
+import { MobilewrightStepExecutor } from "../src/adapters/mobilewright-step-executor.ts";
+import { TestRunService } from "../src/domain/test-run.ts";
 
 const platform = process.env.QA_MOBILE_PLATFORM;
 const deviceId = process.env.QA_MOBILE_DEVICE_ID;
@@ -11,29 +13,56 @@ if (platform !== "android" && platform !== "ios") {
 if (!deviceId) throw new Error("QA_MOBILE_DEVICE_ID is required");
 
 const watchdog = setTimeout(() => {
-  console.error("Mobilewright smoke test exceeded the 180 second watchdog");
+  console.error("QA Platform Mobilewright E2E exceeded the 180 second watchdog");
   process.exit(124);
 }, 180_000);
-const launcher = platform === "android" ? android : ios;
-console.log("Connecting Mobilewright to", platform, deviceId);
-const device = await launcher.launch({ deviceId, bundleId });
+
+const sessions = new MobilewrightSessionManager(bundleId);
+const service = new TestRunService(new MobilewrightStepExecutor(sessions));
+const action = (value) => JSON.stringify(value);
+const testCase = {
+  testCaseId: "native-mobilewright-e2e",
+  tenantId: "00000000-0000-4000-8000-000000000001",
+  version: 1,
+  title: platform + " native Mobilewright adapter smoke",
+  source: "manual",
+  status: "approved",
+  steps: [
+    {
+      stepId: "continue",
+      instruction: "Tap the native Continue button",
+      action: action({ type: "click", locator: { by: "role", value: "button", name: "Continue" } })
+    },
+    {
+      stepId: "wait-welcome",
+      instruction: "Wait for the native Welcome state",
+      action: action({ type: "wait_for", locator: { by: "role", value: "button", name: "Welcome" }, state: "visible" })
+    },
+    {
+      stepId: "assert-welcome",
+      instruction: "Assert the native Welcome label",
+      action: action({ type: "assert_text", locator: { by: "role", value: "button", name: "Welcome" }, expected: "Welcome" })
+    },
+    {
+      stepId: "fill-email",
+      instruction: "Fill the native Email field",
+      action: action({ type: "fill", locator: { by: "label", value: "Email" }, value: "qa@example.test" })
+    }
+  ],
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
+};
 
 try {
-  const continueButton = device.screen.getByRole("button", { name: "Continue" });
-  await continueButton.waitFor({ state: "visible", timeout: 10_000 });
-  console.log("Continue button is visible; tapping");
-  await continueButton.tap();
-
-  const completedButton = device.screen.getByRole("button", { name: "Welcome" });
-  await completedButton.waitFor({ state: "visible", timeout: 10_000 });
-  assert.match(await completedButton.getText(), /Welcome/);
-  console.log("Native action state changed to Welcome");
-
-  const email = device.screen.getByLabel("Email");
-  await email.waitFor({ state: "visible", timeout: 10_000 });
-  await email.fill("qa@example.test");
-  console.log(platform + " Mobilewright native smoke test passed");
+  console.log("Executing QA Platform TestRunService through Mobilewright on", platform, deviceId);
+  const run = await service.execute(testCase, { platform, targetId: deviceId });
+  for (const step of run.stepResults) {
+    console.log(step.status.toUpperCase(), step.stepId, step.message);
+  }
+  assert.equal(run.status, "passed", "QA Platform native Mobilewright Test Run must pass");
+  assert.equal(run.stepResults.length, testCase.steps.length, "all native adapter steps must execute");
+  console.log(platform + " QA Platform Mobilewright native E2E passed");
 } finally {
-  await device.close();
+  await sessions.close();
   clearTimeout(watchdog);
 }

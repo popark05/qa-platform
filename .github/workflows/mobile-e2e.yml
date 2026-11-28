@@ -69,7 +69,7 @@ jobs:
           script: |
             adb install e2e-fixtures/android/app/build/outputs/apk/debug/app-debug.apk
             npx mobilewright install --device emulator-5554
-            QA_MOBILE_PLATFORM=android QA_MOBILE_DEVICE_ID=emulator-5554 QA_MOBILE_BUNDLE_ID=com.popark05.qafixture node scripts/mobilewright-smoke.mjs
+            QA_MOBILE_PLATFORM=android QA_MOBILE_DEVICE_ID=emulator-5554 QA_MOBILE_BUNDLE_ID=com.popark05.qafixture node --import tsx scripts/mobilewright-smoke.mjs
 
   ios-simulator:
     name: iOS simulator native E2E

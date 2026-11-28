@@ -139,12 +139,15 @@ The workflow runs on pushes and pull requests that change the Mobilewright adapt
 - QA Platform owns test authoring, execution, result persistence, and reporting.
 - Cross-repository communication uses versioned contracts and APIs. No product writes directly to another product's database.
 
-## Current limitations
-- Test Case Version content is immutable through the repository/API contract, but database-level mutation guards and retention/archival controls are not yet installed.
-- Test Case, Review Record, and Test Run persistence require PostgreSQL; otherwise data remains in-memory.
+## Current limitations and operational boundaries
+- Test Case Version immutability is enforced by PostgreSQL UPDATE/DELETE triggers and verified by the real-PostgreSQL integration test. Database owners/superusers can still alter schema or disable triggers; restrict migration credentials and production DB privileges.
+- Test Case, Review Record, and Test Run persistence require PostgreSQL; without `DATABASE_URL`, in-memory repositories are used and data is not durable. Stale-run recovery is PostgreSQL-only.
+- Authentication currently validates HS256 JWTs using one shared secret. JWKS/OIDC discovery, signing-key rotation, token revocation/introspection, SSO provisioning and audit export are not implemented. Production requires issuer, audience and a 32-byte-or-longer secret.
+- Tenant isolation is enforced by tenant-scoped repository queries and relational tenant foreign keys. PostgreSQL Row-Level Security (RLS) policies are not enabled; direct SQL access using the application DB credential must therefore be restricted.
+- Local development binds to `127.0.0.1` by default. Production binds to `0.0.0.0` and requires authentication. Override with `HOST` only when the network exposure is understood.
 - Playwright execution is opt-in and requires browser installation in the runtime image.
-- Mobilewright adapter is implemented with unit/fake-driver tests; physical device and simulator E2E execution has not yet been validated in CI.
-- Hybrid WebView/native context switching, automatic APK/IPA installation, authentication, tenant isolation and retention policies are not implemented. Evidence references are stored as relational rows linked to Step Results when PostgreSQL is enabled.
+- Android emulator and iOS simulator smoke workflows exercise the QA Platform Mobilewright adapter through TestRunService. Physical-device certification still requires a connected device lab and platform signing/provisioning.
+- Hybrid WebView/native context switching, automatic APK/IPA installation, and retention/archival policies are not implemented. Evidence references are stored as relational rows linked to Step Results when PostgreSQL is enabled.
 
 ## Core rules
 1. Flow and Test Case are distinct aggregates.
